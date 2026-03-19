@@ -47,7 +47,7 @@ public class LogicMonitorAuthHandler : DelegatingHandler
         return await base.SendAsync(request, cancellationToken);
     }
 
-    internal static string ComputeSignature(string stringToSign, string accessKey)
+    public static string ComputeSignature(string stringToSign, string accessKey)
     {
         var keyBytes = Encoding.UTF8.GetBytes(accessKey);
         var messageBytes = Encoding.UTF8.GetBytes(stringToSign);

@@ -15,10 +15,12 @@ public class LogicMonitorService : ILogicMonitorService
         _logger = logger;
     }
 
+    // ── Devices ──────────────────────────────────────────────────────────────
+
     /// <inheritdoc/>
     public async Task<Device?> GetDeviceAsync(int deviceId, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Fetching device {DeviceId} from LogicMonitor", deviceId);
+        _logger.LogInformation("LM API v3 → GET /device/devices/{DeviceId}", deviceId);
 
         var response = await _httpClient.GetAsync($"device/devices/{deviceId}", cancellationToken);
 
@@ -36,18 +38,19 @@ public class LogicMonitorService : ILogicMonitorService
         return lmResponse?.Data;
     }
 
+    // ── Device Events ─────────────────────────────────────────────────────────
+
     /// <inheritdoc/>
     public async Task<LogicMonitorListData<DeviceEvent>> GetDeviceEventsAsync(
         int deviceId,
         int size = 50,
         int offset = 0,
+        string? filter = null,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation(
-            "Fetching events for device {DeviceId} from LogicMonitor (size={Size}, offset={Offset})",
-            deviceId, size, offset);
+        var url = BuildUrl($"device/devices/{deviceId}/events", size, offset, filter);
+        _logger.LogInformation("LM API v3 → GET {Url}", url);
 
-        var url = $"device/devices/{deviceId}/events?size={size}&offset={offset}";
         var response = await _httpClient.GetAsync(url, cancellationToken);
         response.EnsureSuccessStatusCode();
 
@@ -56,5 +59,66 @@ public class LogicMonitorService : ILogicMonitorService
                 cancellationToken: cancellationToken);
 
         return lmResponse?.Data ?? new LogicMonitorListData<DeviceEvent>();
+    }
+
+    // ── Alerts ────────────────────────────────────────────────────────────────
+
+    /// <inheritdoc/>
+    public async Task<LogicMonitorListData<DeviceAlert>> GetDeviceAlertsAsync(
+        int deviceId,
+        int size = 50,
+        int offset = 0,
+        string? filter = null,
+        CancellationToken cancellationToken = default)
+    {
+        // LM v3 filter for a specific device: monitorObjectId:{id}
+        var deviceFilter = $"monitorObjectId:{deviceId}";
+        var combinedFilter = string.IsNullOrWhiteSpace(filter)
+            ? deviceFilter
+            : $"{deviceFilter},{filter}";
+
+        var url = BuildUrl("alert/alerts", size, offset, combinedFilter);
+        _logger.LogInformation("LM API v3 → GET {Url}", url);
+
+        var response = await _httpClient.GetAsync(url, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        var lmResponse = await response.Content
+            .ReadFromJsonAsync<LogicMonitorResponse<LogicMonitorListData<DeviceAlert>>>(
+                cancellationToken: cancellationToken);
+
+        return lmResponse?.Data ?? new LogicMonitorListData<DeviceAlert>();
+    }
+
+    // ── LM Logs / Log Intelligence ────────────────────────────────────────────
+
+    /// <inheritdoc/>
+    public async Task<LogicMonitorListData<LogEvent>> SearchLogEventsAsync(
+        string? filter = null,
+        int size = 50,
+        int offset = 0,
+        CancellationToken cancellationToken = default)
+    {
+        var url = BuildUrl("log/events", size, offset, filter);
+        _logger.LogInformation("LM API v3 → GET {Url}", url);
+
+        var response = await _httpClient.GetAsync(url, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        var lmResponse = await response.Content
+            .ReadFromJsonAsync<LogicMonitorResponse<LogicMonitorListData<LogEvent>>>(
+                cancellationToken: cancellationToken);
+
+        return lmResponse?.Data ?? new LogicMonitorListData<LogEvent>();
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static string BuildUrl(string path, int size, int offset, string? filter)
+    {
+        var query = $"size={size}&offset={offset}";
+        if (!string.IsNullOrWhiteSpace(filter))
+            query += $"&filter={Uri.EscapeDataString(filter)}";
+        return $"{path}?{query}";
     }
 }

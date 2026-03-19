@@ -1,6 +1,31 @@
 @LMAPI_HostAddress = http://localhost:5136
 
-GET {{LMAPI_HostAddress}}/weatherforecast/
+### Get device details by device ID
+GET {{LMAPI_HostAddress}}/api/devices/42
+Accept: application/json
+
+###
+
+### Get events/logs for a device (last 50, no filter)
+GET {{LMAPI_HostAddress}}/api/devices/42/events?size=50&offset=0
+Accept: application/json
+
+###
+
+### Get events/logs for a device filtered by severity
+GET {{LMAPI_HostAddress}}/api/devices/42/events?filter=severity:"error"&size=50&offset=0
+Accept: application/json
+
+###
+
+### Get active alerts for a device (critical only: severity=2)
+GET {{LMAPI_HostAddress}}/api/devices/42/alerts?filter=severity:2&size=50&offset=0
+Accept: application/json
+
+###
+
+### Search LM Logs for a specific device
+GET {{LMAPI_HostAddress}}/api/logs/events?filter=_lm.resourceId.system.deviceId:"42"&size=50&offset=0
 Accept: application/json
 
 ###

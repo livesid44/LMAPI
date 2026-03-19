@@ -4,7 +4,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace LMAPI.Controllers;
 
-/// <summary>Proxies LogicMonitor device and event data to API consumers.</summary>
+/// <summary>
+/// Exposes LogicMonitor device details and device-level events,
+/// proxying the LM REST API v3 <c>/device/devices</c> endpoints.
+/// </summary>
 [ApiController]
 [Route("api/[controller]")]
 [Produces("application/json")]
@@ -21,10 +24,13 @@ public class DevicesController : ControllerBase
         _logger = logger;
     }
 
+    // ── GET /api/devices/{id} ────────────────────────────────────────────────
+
     /// <summary>
-    /// Returns details for a single LogicMonitor device by its device ID.
+    /// Returns full details for a LogicMonitor device by its device ID.
+    /// Internally calls <c>GET /device/devices/{id}</c> on the LM REST API v3.
     /// </summary>
-    /// <param name="id">The LogicMonitor device ID (integer).</param>
+    /// <param name="id">The LogicMonitor integer device ID.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="200">Device details returned successfully.</response>
     /// <response code="404">No device exists with the given ID.</response>
@@ -51,12 +57,18 @@ public class DevicesController : ControllerBase
         }
     }
 
+    // ── GET /api/devices/{id}/events ─────────────────────────────────────────
+
     /// <summary>
-    /// Returns a paged list of events/logs for the specified LogicMonitor device.
+    /// Returns a paged list of events/logs for a LogicMonitor device.
+    /// Internally calls <c>GET /device/devices/{id}/events</c> on the LM REST API v3.
     /// </summary>
-    /// <param name="id">The LogicMonitor device ID (integer).</param>
-    /// <param name="size">Number of events to return (default 50, max 1000).</param>
+    /// <param name="id">The LogicMonitor integer device ID.</param>
+    /// <param name="size">Number of events to return (1–1000, default 50).</param>
     /// <param name="offset">Zero-based pagination offset (default 0).</param>
+    /// <param name="filter">
+    /// Optional LM v3 filter expression applied server-side, e.g. <c>severity:"error"</c>.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="200">Events returned successfully.</response>
     /// <response code="400">Invalid query parameters.</response>
@@ -69,22 +81,70 @@ public class DevicesController : ControllerBase
         int id,
         [FromQuery] int size = 50,
         [FromQuery] int offset = 0,
+        [FromQuery] string? filter = null,
         CancellationToken cancellationToken = default)
     {
-        if (size < 1 || size > 1000)
+        if (size is < 1 or > 1000)
             return BadRequest(new { message = "size must be between 1 and 1000." });
-
         if (offset < 0)
             return BadRequest(new { message = "offset must be 0 or greater." });
 
         try
         {
-            var events = await _logicMonitorService.GetDeviceEventsAsync(id, size, offset, cancellationToken);
+            var events = await _logicMonitorService
+                .GetDeviceEventsAsync(id, size, offset, filter, cancellationToken);
             return Ok(events);
         }
         catch (HttpRequestException ex)
         {
             _logger.LogError(ex, "Error fetching events for device {DeviceId} from LogicMonitor", id);
+            return StatusCode(StatusCodes.Status502BadGateway,
+                new { message = "Unable to reach the LogicMonitor API." });
+        }
+    }
+
+    // ── GET /api/devices/{id}/alerts ─────────────────────────────────────────
+
+    /// <summary>
+    /// Returns a paged list of alerts for a LogicMonitor device.
+    /// Internally calls <c>GET /alert/alerts?filter=monitorObjectId:{id}</c> on the LM REST API v3.
+    /// </summary>
+    /// <param name="id">The LogicMonitor integer device ID.</param>
+    /// <param name="size">Number of alerts to return (1–1000, default 50).</param>
+    /// <param name="offset">Zero-based pagination offset (default 0).</param>
+    /// <param name="filter">
+    /// Optional additional LM v3 filter expression (ANDed with the device filter),
+    /// e.g. <c>severity:2</c> for critical alerts only.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <response code="200">Alerts returned successfully.</response>
+    /// <response code="400">Invalid query parameters.</response>
+    /// <response code="502">Unable to reach the LogicMonitor API.</response>
+    [HttpGet("{id:int}/alerts")]
+    [ProducesResponseType(typeof(LogicMonitorListData<DeviceAlert>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    public async Task<IActionResult> GetDeviceAlerts(
+        int id,
+        [FromQuery] int size = 50,
+        [FromQuery] int offset = 0,
+        [FromQuery] string? filter = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (size is < 1 or > 1000)
+            return BadRequest(new { message = "size must be between 1 and 1000." });
+        if (offset < 0)
+            return BadRequest(new { message = "offset must be 0 or greater." });
+
+        try
+        {
+            var alerts = await _logicMonitorService
+                .GetDeviceAlertsAsync(id, size, offset, filter, cancellationToken);
+            return Ok(alerts);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "Error fetching alerts for device {DeviceId} from LogicMonitor", id);
             return StatusCode(StatusCodes.Status502BadGateway,
                 new { message = "Unable to reach the LogicMonitor API." });
         }

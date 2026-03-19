@@ -12,8 +12,9 @@ builder.Services.AddSwaggerGen(options =>
     {
         Title = "LogicMonitor API Gateway",
         Version = "v1",
-        Description = "A .NET 8 Web API that internally calls the LogicMonitor REST API " +
-                      "to expose device details and event logs by device ID."
+        Description = "A .NET 8 Web API that internally calls the LogicMonitor REST API v3 " +
+                      "to expose device details, device events, device alerts, and LM Logs by device ID. " +
+                      "Authentication uses the LMv1 HMAC-SHA256 token scheme."
     });
 
     var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
@@ -38,7 +39,7 @@ builder.Services
     {
         client.BaseAddress = new Uri(baseUrl);
         client.Timeout = TimeSpan.FromSeconds(30);
-        client.DefaultRequestHeaders.Add("X-Version", "2");
+        client.DefaultRequestHeaders.Add("X-Version", "3");
     })
     .AddHttpMessageHandler<LogicMonitorAuthHandler>();
 
