@@ -1,37 +1,50 @@
+using LMAPI.Infrastructure;
 using LMAPI.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// ── Controllers & API exploration ───────────────────────────────────────────
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
     options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
     {
-        Title = "Log Monitoring API Gateway",
+        Title = "LogicMonitor API Gateway",
         Version = "v1",
-        Description = "A .NET Core API that internally calls the Log Monitoring API."
+        Description = "A .NET 8 Web API that internally calls the LogicMonitor REST API " +
+                      "to expose device details and event logs by device ID."
     });
+
     var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
     var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
     if (File.Exists(xmlPath))
         options.IncludeXmlComments(xmlPath);
 });
 
-// Register the typed HttpClient for the Log Monitoring API.
-var logMonitoringBaseUrl = builder.Configuration["LogMonitoringApi:BaseUrl"]
-    ?? throw new InvalidOperationException("LogMonitoringApi:BaseUrl is not configured.");
+// ── LogicMonitor configuration ───────────────────────────────────────────────
+var lmSection = builder.Configuration.GetSection("LogicMonitor");
+var company   = lmSection["Company"]   ?? throw new InvalidOperationException("LogicMonitor:Company is not configured.");
+var accessId  = lmSection["AccessId"]  ?? throw new InvalidOperationException("LogicMonitor:AccessId is not configured.");
+var accessKey = lmSection["AccessKey"] ?? throw new InvalidOperationException("LogicMonitor:AccessKey is not configured.");
 
-builder.Services.AddHttpClient<ILogMonitoringService, LogMonitoringService>(client =>
-{
-    client.BaseAddress = new Uri(logMonitoringBaseUrl.TrimEnd('/') + "/");
-    client.Timeout = TimeSpan.FromSeconds(30);
-});
+var baseUrl = $"https://{company}.logicmonitor.com/santaba/rest/";
 
+// ── Register the LMv1 auth handler and typed HttpClient ─────────────────────
+builder.Services.AddTransient(_ => new LogicMonitorAuthHandler(accessId, accessKey));
+
+builder.Services
+    .AddHttpClient<ILogicMonitorService, LogicMonitorService>(client =>
+    {
+        client.BaseAddress = new Uri(baseUrl);
+        client.Timeout = TimeSpan.FromSeconds(30);
+        client.DefaultRequestHeaders.Add("X-Version", "2");
+    })
+    .AddHttpMessageHandler<LogicMonitorAuthHandler>();
+
+// ── Build & middleware ───────────────────────────────────────────────────────
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
