@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "dev"
+    },
+    "location": {
+      "value": "eastus"
+    },
+    "lmCompany": {
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/<subscription-id>/resourceGroups/<rg>/providers/Microsoft.KeyVault/vaults/<bootstrap-kv>"
+        },
+        "secretName": "lm-company"
+      }
+    },
+    "lmAccessId": {
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/<subscription-id>/resourceGroups/<rg>/providers/Microsoft.KeyVault/vaults/<bootstrap-kv>"
+        },
+        "secretName": "lm-access-id"
+      }
+    },
+    "lmAccessKey": {
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/<subscription-id>/resourceGroups/<rg>/providers/Microsoft.KeyVault/vaults/<bootstrap-kv>"
+        },
+        "secretName": "lm-access-key"
+      }
+    },
+    "containerImageName": {
+      "value": "lmapi"
+    },
+    "containerImageTag": {
+      "value": "latest"
+    },
+    "minReplicas": {
+      "value": 0
+    },
+    "maxReplicas": {
+      "value": 5
+    }
+  }
+}

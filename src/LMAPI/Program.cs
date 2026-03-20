@@ -3,7 +3,13 @@ using LMAPI.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ── Controllers & API exploration ───────────────────────────────────────────
+// ── Application Insights telemetry ────────────────────────────────────────────
+builder.Services.AddApplicationInsightsTelemetry();
+
+// ── Health checks ─────────────────────────────────────────────────────────────
+builder.Services.AddHealthChecks();
+
+// ── Controllers & API exploration ─────────────────────────────────────────────
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -12,9 +18,11 @@ builder.Services.AddSwaggerGen(options =>
     {
         Title = "LogicMonitor API Gateway",
         Version = "v1",
-        Description = "A .NET 8 Web API that internally calls the LogicMonitor REST API v3 " +
-                      "to expose device details, device events, device alerts, and LM Logs by device ID. " +
-                      "Authentication uses the LMv1 HMAC-SHA256 token scheme."
+        Description =
+            "A .NET 8 Web API that internally calls the LogicMonitor REST API v3 " +
+            "to expose device details, device events, device alerts, and LM Logs by device ID. " +
+            "Authentication uses the LMv1 HMAC-SHA256 token scheme. " +
+            "Also implements an MCP (Model Context Protocol) server at POST /mcp."
     });
 
     var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
@@ -23,7 +31,9 @@ builder.Services.AddSwaggerGen(options =>
         options.IncludeXmlComments(xmlPath);
 });
 
-// ── LogicMonitor configuration ───────────────────────────────────────────────
+// ── LogicMonitor configuration ────────────────────────────────────────────────
+// In Azure, these values come from Container App secrets backed by Key Vault.
+// Locally, set them in appsettings.Development.json or user secrets.
 var lmSection = builder.Configuration.GetSection("LogicMonitor");
 var company   = lmSection["Company"]   ?? throw new InvalidOperationException("LogicMonitor:Company is not configured.");
 var accessId  = lmSection["AccessId"]  ?? throw new InvalidOperationException("LogicMonitor:AccessId is not configured.");
@@ -31,7 +41,7 @@ var accessKey = lmSection["AccessKey"] ?? throw new InvalidOperationException("L
 
 var baseUrl = $"https://{company}.logicmonitor.com/santaba/rest/";
 
-// ── Register the LMv1 auth handler and typed HttpClient ─────────────────────
+// ── Register the LMv1 auth handler and typed HttpClient ───────────────────────
 builder.Services.AddTransient(_ => new LogicMonitorAuthHandler(accessId, accessKey));
 
 builder.Services
@@ -43,7 +53,7 @@ builder.Services
     })
     .AddHttpMessageHandler<LogicMonitorAuthHandler>();
 
-// ── Build & middleware ───────────────────────────────────────────────────────
+// ── Build & middleware ────────────────────────────────────────────────────────
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -54,5 +64,8 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.MapControllers();
+
+// Liveness / readiness probe — used by Azure Container Apps and the Dockerfile HEALTHCHECK
+app.MapHealthChecks("/health");
 
 app.Run();
