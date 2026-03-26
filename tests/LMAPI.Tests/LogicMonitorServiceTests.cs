@@ -259,4 +259,60 @@ public class LogicMonitorServiceTests
         using var client = BuildHttpClient(HttpStatusCode.InternalServerError, null);
         await Assert.ThrowsAsync<HttpRequestException>(() => BuildService(client).SearchLogEventsAsync());
     }
+
+    // ── LM body-level error code handling (errorCode 1401 etc.) ──────────────
+
+    [Fact]
+    public async Task GetDevicesAsync_Throws_WhenLmBodyContainsErrorCode1401()
+    {
+        // LM can return HTTP 200 with {"errorCode":1401,"errorMessage":"Authentication failed"}
+        // in the body — the service must detect and surface this as an HttpRequestException.
+        var errorBody = new { errorCode = 1401, errorMessage = "Authentication failed", errorDetail = (string?)null };
+
+        using var client = BuildHttpClient(HttpStatusCode.OK, errorBody);
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(
+            () => BuildService(client).GetDevicesAsync());
+
+        Assert.Contains("1401", ex.Message);
+        Assert.Contains("BearerToken", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetDevicesAsync_Throws_WhenLmBodyContainsStatusError()
+    {
+        // Older LM error shape: {"status":1401,"errmsg":"Authentication failed"}
+        var errorBody = new { status = 1401, errmsg = "Authentication failed" };
+
+        using var client = BuildHttpClient(HttpStatusCode.OK, errorBody);
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(
+            () => BuildService(client).GetDevicesAsync());
+
+        Assert.Contains("1401", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetDevicesAsync_Throws_WhenLmBodyContainsNon200Status()
+    {
+        // Any non-1401, non-200 LM status code should also throw.
+        var errorBody = new { status = 1404, errmsg = "Resource not found" };
+
+        using var client = BuildHttpClient(HttpStatusCode.OK, errorBody);
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(
+            () => BuildService(client).GetDevicesAsync());
+
+        Assert.Contains("1404", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetDeviceAlertsAsync_Throws_WhenLmBodyContainsErrorCode1401()
+    {
+        var errorBody = new { errorCode = 1401, errorMessage = "Authentication failed", errorDetail = (string?)null };
+
+        using var client = BuildHttpClient(HttpStatusCode.OK, errorBody);
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(
+            () => BuildService(client).GetDeviceAlertsAsync(42));
+
+        Assert.Contains("1401", ex.Message);
+        Assert.Contains("BearerToken", ex.Message);
+    }
 }

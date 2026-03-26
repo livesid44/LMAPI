@@ -39,6 +39,7 @@ public class LogicMonitorService : ILogicMonitorService
             .ReadFromJsonAsync<LogicMonitorResponse<LogicMonitorListData<Device>>>(
                 cancellationToken: cancellationToken);
 
+        EnsureLmSuccess(lmResponse);
         return lmResponse?.Data ?? new LogicMonitorListData<Device>();
     }
 
@@ -66,6 +67,7 @@ public class LogicMonitorService : ILogicMonitorService
         var lmResponse = await response.Content
             .ReadFromJsonAsync<LogicMonitorResponse<Device>>(cancellationToken: cancellationToken);
 
+        EnsureLmSuccess(lmResponse);
         return lmResponse?.Data;
     }
 
@@ -94,6 +96,7 @@ public class LogicMonitorService : ILogicMonitorService
             .ReadFromJsonAsync<LogicMonitorResponse<LogicMonitorListData<DeviceEvent>>>(
                 cancellationToken: cancellationToken);
 
+        EnsureLmSuccess(lmResponse);
         return lmResponse?.Data ?? new LogicMonitorListData<DeviceEvent>();
     }
 
@@ -128,6 +131,7 @@ public class LogicMonitorService : ILogicMonitorService
             .ReadFromJsonAsync<LogicMonitorResponse<LogicMonitorListData<DeviceAlert>>>(
                 cancellationToken: cancellationToken);
 
+        EnsureLmSuccess(lmResponse);
         return lmResponse?.Data ?? new LogicMonitorListData<DeviceAlert>();
     }
 
@@ -155,6 +159,7 @@ public class LogicMonitorService : ILogicMonitorService
             .ReadFromJsonAsync<LogicMonitorResponse<LogicMonitorListData<LogEvent>>>(
                 cancellationToken: cancellationToken);
 
+        EnsureLmSuccess(lmResponse);
         return lmResponse?.Data ?? new LogicMonitorListData<LogEvent>();
     }
 
@@ -166,5 +171,43 @@ public class LogicMonitorService : ILogicMonitorService
         if (!string.IsNullOrWhiteSpace(filter))
             query += $"&filter={Uri.EscapeDataString(filter)}";
         return $"{path}?{query}";
+    }
+
+    /// <summary>
+    /// Validates a deserialized LogicMonitor response envelope and throws an
+    /// <see cref="HttpRequestException"/> if the LM application-level error code
+    /// indicates a failure.
+    /// <para>
+    /// LogicMonitor v3 can return HTTP 200 with an error payload in the body — for
+    /// example <c>{ "errorCode": 1401, "errorMessage": "Authentication failed" }</c>
+    /// or <c>{ "status": 1401, "errmsg": "Authentication failed" }</c>.
+    /// This method detects both shapes.
+    /// </para>
+    /// </summary>
+    private static void EnsureLmSuccess<T>(LogicMonitorResponse<T>? lmResponse)
+    {
+        if (lmResponse is null) return;
+
+        // Determine the effective LM error code: prefer errorCode (the newer field),
+        // fall back to status.  Status == 200 (or 0 when not present) means success.
+        var code = lmResponse.ErrorCode != 0 ? lmResponse.ErrorCode
+                 : lmResponse.Status      != 0 ? lmResponse.Status
+                 : 0;
+
+        if (code is 0 or 200) return;
+
+        // Prefer the more descriptive message when both fields are present.
+        var message = !string.IsNullOrWhiteSpace(lmResponse.ErrorMessageAlt)
+            ? lmResponse.ErrorMessageAlt
+            : lmResponse.ErrorMessage;
+
+        if (code == 1401)
+            throw new HttpRequestException(
+                $"LogicMonitor authentication failed (errorCode {code}: {message}). " +
+                "Verify that LogicMonitor:BearerToken is correct " +
+                "and that the token has not been revoked or expired.");
+
+        throw new HttpRequestException(
+            $"LogicMonitor returned error {code}: {message}");
     }
 }
