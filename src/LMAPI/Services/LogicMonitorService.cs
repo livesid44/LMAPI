@@ -18,6 +18,26 @@ public class LogicMonitorService : ILogicMonitorService
     // ── Devices ──────────────────────────────────────────────────────────────
 
     /// <inheritdoc/>
+    public async Task<LogicMonitorListData<Device>> GetDevicesAsync(
+        int size = 50,
+        int offset = 0,
+        string? filter = null,
+        CancellationToken cancellationToken = default)
+    {
+        var url = BuildUrl("device/devices", size, offset, filter);
+        _logger.LogInformation("LM API v3 → GET {Url}", url);
+
+        var response = await _httpClient.GetAsync(url, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        var lmResponse = await response.Content
+            .ReadFromJsonAsync<LogicMonitorResponse<LogicMonitorListData<Device>>>(
+                cancellationToken: cancellationToken);
+
+        return lmResponse?.Data ?? new LogicMonitorListData<Device>();
+    }
+
+    /// <inheritdoc/>
     public async Task<Device?> GetDeviceAsync(int deviceId, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("LM API v3 → GET /device/devices/{DeviceId}", deviceId);

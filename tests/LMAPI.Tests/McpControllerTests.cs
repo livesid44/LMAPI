@@ -75,6 +75,7 @@ public class McpControllerTests
         Assert.Null(response.Error);
 
         var resultJson = JsonSerializer.Serialize(response.Result);
+        Assert.Contains("list_devices", resultJson);
         Assert.Contains("get_device", resultJson);
         Assert.Contains("get_device_events", resultJson);
         Assert.Contains("get_device_alerts", resultJson);
@@ -94,6 +95,73 @@ public class McpControllerTests
 
         Assert.NotNull(response.Error);
         Assert.Equal(-32601, response.Error!.Code);
+    }
+
+    // ── tools/call — list_devices ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task ToolsCall_ListDevices_ReturnsDeviceListJson()
+    {
+        var data = new LogicMonitorListData<Device>
+        {
+            Total = 2,
+            Items =
+            [
+                new Device { Id = 1, DisplayName = "Router-01", AlertStatus = "normal" },
+                new Device { Id = 2, DisplayName = "Switch-01", AlertStatus = "warn"   }
+            ]
+        };
+
+        var svcMock = new Mock<ILogicMonitorService>();
+        svcMock.Setup(s => s.GetDevicesAsync(50, 0, null, It.IsAny<CancellationToken>()))
+               .ReturnsAsync(data);
+
+        var controller = BuildController(svcMock.Object);
+        var req = MakeRequest("tools/call", new
+        {
+            name = "list_devices",
+            arguments = new { }
+        });
+
+        var actionResult = await controller.HandleAsync(req, default);
+        var response = GetResponse(actionResult);
+
+        Assert.Null(response.Error);
+        var resultJson = JsonSerializer.Serialize(response.Result);
+        Assert.Contains("Router-01", resultJson);
+        Assert.Contains("Switch-01", resultJson);
+        svcMock.Verify(s => s.GetDevicesAsync(50, 0, null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ToolsCall_ListDevices_WithFilter_PassesFilterToService()
+    {
+        var data = new LogicMonitorListData<Device>
+        {
+            Total = 1,
+            Items = [new Device { Id = 5, DisplayName = "Web-Prod-01", AlertStatus = "critical" }]
+        };
+
+        var svcMock = new Mock<ILogicMonitorService>();
+        svcMock.Setup(s => s.GetDevicesAsync(10, 0, "alertStatus:\"critical\"", It.IsAny<CancellationToken>()))
+               .ReturnsAsync(data);
+
+        var controller = BuildController(svcMock.Object);
+        var req = MakeRequest("tools/call", new
+        {
+            name = "list_devices",
+            arguments = new { size = 10, filter = "alertStatus:\"critical\"" }
+        });
+
+        var actionResult = await controller.HandleAsync(req, default);
+        var response = GetResponse(actionResult);
+
+        Assert.Null(response.Error);
+        var resultJson = JsonSerializer.Serialize(response.Result);
+        Assert.Contains("Web-Prod-01", resultJson);
+        svcMock.Verify(
+            s => s.GetDevicesAsync(10, 0, "alertStatus:\"critical\"", It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     // ── tools/call — get_device ───────────────────────────────────────────────

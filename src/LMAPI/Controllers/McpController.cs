@@ -93,6 +93,7 @@ public class McpController : ControllerBase
         {
             var result = callParams.Name switch
             {
+                "list_devices"      => await ListDevicesAsync(callParams, cancellationToken),
                 "get_device"        => await GetDeviceAsync(callParams, cancellationToken),
                 "get_device_events" => await GetDeviceEventsAsync(callParams, cancellationToken),
                 "get_device_alerts" => await GetDeviceAlertsAsync(callParams, cancellationToken),
@@ -122,6 +123,18 @@ public class McpController : ControllerBase
     }
 
     // ── Tool implementations ──────────────────────────────────────────────────
+
+    private async Task<McpToolCallResult> ListDevicesAsync(
+        McpToolCallParams callParams,
+        CancellationToken cancellationToken)
+    {
+        var size   = GetOptionalInt(callParams.Arguments, "size",   50);
+        var offset = GetOptionalInt(callParams.Arguments, "offset", 0);
+        var filter = GetOptionalString(callParams.Arguments, "filter");
+
+        var data = await _lmService.GetDevicesAsync(size, offset, filter, cancellationToken);
+        return TextResult(JsonSerializer.Serialize(data, _jsonOptions));
+    }
 
     private async Task<McpToolCallResult> GetDeviceAsync(
         McpToolCallParams callParams,

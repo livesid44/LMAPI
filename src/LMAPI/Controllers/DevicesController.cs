@@ -24,6 +24,51 @@ public class DevicesController : ControllerBase
         _logger = logger;
     }
 
+    // ── GET /api/devices ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns a paged list of all devices in the LogicMonitor organization.
+    /// Internally calls <c>GET /device/devices</c> on the LM REST API v3.
+    /// </summary>
+    /// <param name="size">Number of devices to return (1–1000, default 50).</param>
+    /// <param name="offset">Zero-based pagination offset (default 0).</param>
+    /// <param name="filter">
+    /// Optional LM v3 filter expression, e.g. <c>alertStatus:"critical"</c>
+    /// or <c>displayName~"web"</c> (contains match).
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <response code="200">Device list returned successfully.</response>
+    /// <response code="400">Invalid query parameters.</response>
+    /// <response code="502">Unable to reach the LogicMonitor API.</response>
+    [HttpGet]
+    [ProducesResponseType(typeof(LogicMonitorListData<Device>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    public async Task<IActionResult> GetDevices(
+        [FromQuery] int size = 50,
+        [FromQuery] int offset = 0,
+        [FromQuery] string? filter = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (size is < 1 or > 1000)
+            return BadRequest(new { message = "size must be between 1 and 1000." });
+        if (offset < 0)
+            return BadRequest(new { message = "offset must be 0 or greater." });
+
+        try
+        {
+            var devices = await _logicMonitorService
+                .GetDevicesAsync(size, offset, filter, cancellationToken);
+            return Ok(devices);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "Error fetching device list from LogicMonitor");
+            return StatusCode(StatusCodes.Status502BadGateway,
+                new { message = "Unable to reach the LogicMonitor API." });
+        }
+    }
+
     // ── GET /api/devices/{id} ────────────────────────────────────────────────
 
     /// <summary>

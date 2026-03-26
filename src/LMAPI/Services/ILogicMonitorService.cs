@@ -7,6 +7,23 @@ public interface ILogicMonitorService
     // ── Devices ──────────────────────────────────────────────────────────────
 
     /// <summary>
+    /// Returns a paged list of all devices in the LogicMonitor organization from
+    /// <c>GET /device/devices</c> (LM REST API v3).
+    /// </summary>
+    /// <param name="size">Page size (1–1000, default 50).</param>
+    /// <param name="offset">Zero-based page offset (default 0).</param>
+    /// <param name="filter">
+    /// Optional LM v3 filter expression, e.g. <c>alertStatus:"critical"</c>
+    /// or <c>displayName~"web"</c> (contains match).
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<LogicMonitorListData<Device>> GetDevicesAsync(
+        int size = 50,
+        int offset = 0,
+        string? filter = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns full details for a single device from
     /// <c>GET /device/devices/{id}</c> (LM REST API v3).
     /// </summary>

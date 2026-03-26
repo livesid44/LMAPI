@@ -40,6 +40,55 @@ public class LogicMonitorServiceTests
     private static LogicMonitorService BuildService(HttpClient client)
         => new(client, NullLogger<LogicMonitorService>.Instance);
 
+    // ── GetDevicesAsync ───────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDevicesAsync_ReturnsDevices_WhenSuccessful()
+    {
+        var items = new[]
+        {
+            new Device { Id = 1, DisplayName = "Router-01",  Name = "10.0.0.1", AlertStatus = "normal" },
+            new Device { Id = 2, DisplayName = "Switch-01",  Name = "10.0.0.2", AlertStatus = "warn"   },
+            new Device { Id = 3, DisplayName = "Web-Server", Name = "10.0.0.3", AlertStatus = "critical" }
+        };
+        var envelope = new LogicMonitorResponse<LogicMonitorListData<Device>>
+        {
+            Status = 200, ErrorMessage = "OK",
+            Data = new LogicMonitorListData<Device> { Total = 3, Items = items }
+        };
+
+        using var client = BuildHttpClient(HttpStatusCode.OK, envelope);
+        var result = await BuildService(client).GetDevicesAsync();
+
+        Assert.Equal(3, result.Total);
+        Assert.Equal(3, result.Items.Count);
+        Assert.Equal("Router-01", result.Items[0].DisplayName);
+        Assert.Equal("Switch-01", result.Items[1].DisplayName);
+    }
+
+    [Fact]
+    public async Task GetDevicesAsync_ReturnsEmpty_WhenNoDevices()
+    {
+        var envelope = new LogicMonitorResponse<LogicMonitorListData<Device>>
+        {
+            Status = 200, ErrorMessage = "OK",
+            Data = new LogicMonitorListData<Device> { Total = 0, Items = [] }
+        };
+
+        using var client = BuildHttpClient(HttpStatusCode.OK, envelope);
+        var result = await BuildService(client).GetDevicesAsync();
+
+        Assert.Equal(0, result.Total);
+        Assert.Empty(result.Items);
+    }
+
+    [Fact]
+    public async Task GetDevicesAsync_Throws_WhenApiReturnsServerError()
+    {
+        using var client = BuildHttpClient(HttpStatusCode.InternalServerError, null);
+        await Assert.ThrowsAsync<HttpRequestException>(() => BuildService(client).GetDevicesAsync());
+    }
+
     // ── GetDeviceAsync ────────────────────────────────────────────────────────
 
     [Fact]

@@ -10,6 +10,39 @@ public static class McpToolDefinitions
     [
         new McpTool
         {
+            Name = "list_devices",
+            Description =
+                "Returns a paged list of all monitored devices in the LogicMonitor organization. " +
+                "Use the filter parameter to narrow results, e.g. alertStatus:\"critical\" or displayName~\"web\".",
+            InputSchema = new
+            {
+                type = "object",
+                properties = new
+                {
+                    size = new
+                    {
+                        type = "integer",
+                        description = "Number of devices to return (1–1000). Default: 50.",
+                        @default = 50
+                    },
+                    offset = new
+                    {
+                        type = "integer",
+                        description = "Zero-based pagination offset. Default: 0.",
+                        @default = 0
+                    },
+                    filter = new
+                    {
+                        type = "string",
+                        description =
+                            "Optional LM v3 filter expression, e.g. alertStatus:\"critical\" or displayName~\"web\"."
+                    }
+                }
+            }
+        },
+
+        new McpTool
+        {
             Name = "get_device",
             Description =
                 "Returns full details for a LogicMonitor monitored device by its integer device ID. " +
