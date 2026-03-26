@@ -12,9 +12,9 @@ namespace LMAPI.Infrastructure;
 /// <c>Base64( HMAC-SHA256( AccessKey, HTTPMethod + EpochMs + RequestBody + ResourcePath ) )</c>
 /// </para>
 /// <para>
-/// When the <c>Debug</c> log level is enabled for <c>LMAPI.Infrastructure</c> the handler
-/// logs an equivalent <c>curl</c> command before each request, which makes it easy to
-/// reproduce a request manually and verify that the credentials and signature are correct.
+/// The handler logs an equivalent <c>curl</c> command at <c>Information</c> level before
+/// each request, which makes it easy to reproduce the request in Postman or a terminal
+/// and verify that the credentials and signature are correct.
 /// </para>
 /// </summary>
 public class LogicMonitorAuthHandler : DelegatingHandler
@@ -57,13 +57,13 @@ public class LogicMonitorAuthHandler : DelegatingHandler
         request.Headers.Authorization =
             new AuthenticationHeaderValue("LMv1", $"{_accessId}:{signature}:{epochMs}");
 
-        // Log an equivalent curl command so the request can be reproduced manually.
-        // Guarded by IsEnabled so the string allocation is skipped in production
-        // unless Debug logging is explicitly turned on.
-        if (_logger.IsEnabled(LogLevel.Debug))
-            _logger.LogDebug(
-                "Outgoing LogicMonitor request — equivalent curl:\n{Curl}",
-                BuildCurlCommand(request, body));
+        // Log an equivalent curl command at Information level so it is always visible
+        // in every environment (including Azure Container Apps) without any extra config.
+        // The Authorization header contains only the time-bound HMAC signature — the
+        // raw AccessKey is never written to logs.
+        _logger.LogInformation(
+            "Outgoing LogicMonitor request — equivalent curl:\n{Curl}",
+            BuildCurlCommand(request, body));
 
         return await base.SendAsync(request, cancellationToken);
     }
