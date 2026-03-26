@@ -39,6 +39,23 @@ var company   = lmSection["Company"]   ?? throw new InvalidOperationException("L
 var accessId  = lmSection["AccessId"]  ?? throw new InvalidOperationException("LogicMonitor:AccessId is not configured.");
 var accessKey = lmSection["AccessKey"] ?? throw new InvalidOperationException("LogicMonitor:AccessKey is not configured.");
 
+// Detect un-replaced placeholder values so the app fails fast with a clear message
+// instead of making a live HTTP request to "your-company.logicmonitor.com" and getting
+// a confusing DNS error.
+static void AssertNotPlaceholder(string value, string settingPath, string placeholder)
+{
+    if (string.Equals(value, placeholder, StringComparison.OrdinalIgnoreCase))
+        throw new InvalidOperationException(
+            $"'{settingPath}' is still set to the placeholder value \"{placeholder}\". " +
+            $"Set the real value via an environment variable (LogicMonitor__{settingPath.Split(':')[1]}), " +
+            $".NET user secrets (dotnet user-secrets set \"{settingPath}\" \"<value>\"), " +
+            $"or override it in appsettings.Development.json.");
+}
+
+AssertNotPlaceholder(company,   "LogicMonitor:Company",   "your-company");
+AssertNotPlaceholder(accessId,  "LogicMonitor:AccessId",  "your-access-id");
+AssertNotPlaceholder(accessKey, "LogicMonitor:AccessKey", "your-access-key");
+
 var baseUrl = $"https://{company}.logicmonitor.com/santaba/rest/";
 
 // ── Register the LMv1 auth handler and typed HttpClient ───────────────────────
