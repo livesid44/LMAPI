@@ -59,7 +59,8 @@ AssertNotPlaceholder(accessKey, "LogicMonitor:AccessKey", "your-access-key");
 var baseUrl = $"https://{company}.logicmonitor.com/santaba/rest/";
 
 // ── Register the LMv1 auth handler and typed HttpClient ───────────────────────
-builder.Services.AddTransient(_ => new LogicMonitorAuthHandler(accessId, accessKey));
+builder.Services.AddTransient(sp => new LogicMonitorAuthHandler(
+    accessId, accessKey, sp.GetRequiredService<ILogger<LogicMonitorAuthHandler>>()));
 
 builder.Services
     .AddHttpClient<ILogicMonitorService, LogicMonitorService>(client =>

@@ -11,16 +11,26 @@ namespace LMAPI.Infrastructure;
 /// Signature formula (from LogicMonitor docs):
 /// <c>Base64( HMAC-SHA256( AccessKey, HTTPMethod + EpochMs + RequestBody + ResourcePath ) )</c>
 /// </para>
+/// <para>
+/// When the <c>Debug</c> log level is enabled for <c>LMAPI.Infrastructure</c> the handler
+/// logs an equivalent <c>curl</c> command before each request, which makes it easy to
+/// reproduce a request manually and verify that the credentials and signature are correct.
+/// </para>
 /// </summary>
 public class LogicMonitorAuthHandler : DelegatingHandler
 {
     private readonly string _accessId;
     private readonly string _accessKey;
+    private readonly ILogger<LogicMonitorAuthHandler> _logger;
 
-    public LogicMonitorAuthHandler(string accessId, string accessKey)
+    public LogicMonitorAuthHandler(
+        string accessId,
+        string accessKey,
+        ILogger<LogicMonitorAuthHandler> logger)
     {
         _accessId = accessId;
         _accessKey = accessKey;
+        _logger = logger;
     }
 
     protected override async Task<HttpResponseMessage> SendAsync(
@@ -47,7 +57,39 @@ public class LogicMonitorAuthHandler : DelegatingHandler
         request.Headers.Authorization =
             new AuthenticationHeaderValue("LMv1", $"{_accessId}:{signature}:{epochMs}");
 
+        // Log an equivalent curl command so the request can be reproduced manually.
+        // Guarded by IsEnabled so the string allocation is skipped in production
+        // unless Debug logging is explicitly turned on.
+        if (_logger.IsEnabled(LogLevel.Debug))
+            _logger.LogDebug(
+                "Outgoing LogicMonitor request — equivalent curl:\n{Curl}",
+                BuildCurlCommand(request, body));
+
         return await base.SendAsync(request, cancellationToken);
+    }
+
+    /// <summary>
+    /// Builds a <c>curl</c> command string that reproduces the given request exactly,
+    /// including all headers and (optionally) a request body.
+    /// </summary>
+    public static string BuildCurlCommand(HttpRequestMessage request, string body)
+    {
+        var sb = new StringBuilder();
+        sb.Append($"curl -X {request.Method.Method.ToUpperInvariant()} '{request.RequestUri?.AbsoluteUri}'");
+
+        foreach (var (name, values) in request.Headers)
+            foreach (var value in values)
+                sb.Append($" \\\n  -H '{name}: {value}'");
+
+        if (request.Content is not null)
+            foreach (var (name, values) in request.Content.Headers)
+                foreach (var value in values)
+                    sb.Append($" \\\n  -H '{name}: {value}'");
+
+        if (!string.IsNullOrEmpty(body))
+            sb.Append($" \\\n  -d '{body}'");
+
+        return sb.ToString();
     }
 
     public static string ComputeSignature(string stringToSign, string accessKey)

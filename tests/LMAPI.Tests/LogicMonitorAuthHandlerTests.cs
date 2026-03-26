@@ -1,5 +1,6 @@
 using System.Text;
 using LMAPI.Infrastructure;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace LMAPI.Tests;
 
@@ -59,7 +60,7 @@ public class LogicMonitorAuthHandlerTests
             return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
         });
 
-        var handler = new LogicMonitorAuthHandler("id", "key") { InnerHandler = inner };
+        var handler = new LogicMonitorAuthHandler("id", "key", NullLogger<LogicMonitorAuthHandler>.Instance) { InnerHandler = inner };
         using var client = new HttpClient(handler)
         {
             BaseAddress = new Uri("https://test.logicmonitor.com/santaba/rest/")
@@ -97,7 +98,7 @@ public class LogicMonitorAuthHandlerTests
             return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
         });
 
-        var handler = new LogicMonitorAuthHandler("test-id", "test-key")
+        var handler = new LogicMonitorAuthHandler("test-id", "test-key", NullLogger<LogicMonitorAuthHandler>.Instance)
         {
             InnerHandler = inner
         };
@@ -119,6 +120,57 @@ public class LogicMonitorAuthHandlerTests
         Assert.Equal("test-id", parts[0]);
         Assert.False(string.IsNullOrWhiteSpace(parts[1]));
         Assert.True(long.TryParse(parts[2], out _));
+    }
+
+    // ── BuildCurlCommand ─────────────────────────────────────────────────────
+
+    [Fact]
+    public void BuildCurlCommand_IncludesMethodAndUrl()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get,
+            new Uri("https://example.logicmonitor.com/santaba/rest/device/devices?size=50&offset=0"));
+        request.Headers.Add("Authorization", "LMv1 id:sig:epoch");
+
+        var curl = LogicMonitorAuthHandler.BuildCurlCommand(request, string.Empty);
+
+        Assert.Contains("curl -X GET", curl);
+        Assert.Contains("https://example.logicmonitor.com/santaba/rest/device/devices?size=50&offset=0", curl);
+    }
+
+    [Fact]
+    public void BuildCurlCommand_IncludesAuthorizationHeader()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get,
+            new Uri("https://example.logicmonitor.com/santaba/rest/device/devices"));
+        request.Headers.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("LMv1", "myId:mySignature:12345");
+
+        var curl = LogicMonitorAuthHandler.BuildCurlCommand(request, string.Empty);
+
+        Assert.Contains("-H 'Authorization: LMv1 myId:mySignature:12345'", curl);
+    }
+
+    [Fact]
+    public void BuildCurlCommand_IncludesBodyForPostRequests()
+    {
+        const string body = "{\"name\":\"test\"}";
+        var request = new HttpRequestMessage(HttpMethod.Post,
+            new Uri("https://example.logicmonitor.com/santaba/rest/device/devices"));
+
+        var curl = LogicMonitorAuthHandler.BuildCurlCommand(request, body);
+
+        Assert.Contains($"-d '{body}'", curl);
+    }
+
+    [Fact]
+    public void BuildCurlCommand_OmitsBodyWhenEmpty()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get,
+            new Uri("https://example.logicmonitor.com/santaba/rest/device/devices"));
+
+        var curl = LogicMonitorAuthHandler.BuildCurlCommand(request, string.Empty);
+
+        Assert.DoesNotContain("-d ", curl);
     }
 
     // ── Helper inner handler ──────────────────────────────────────────────────
