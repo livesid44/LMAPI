@@ -41,6 +41,49 @@ public class LogicMonitorAuthHandlerTests
         Assert.NotEqual(sig1, sig2);
     }
 
+    // ── Query string excluded from signature ─────────────────────────────────
+    // The LMv1 spec signs:  Method + EpochMs + Body + ResourcePath
+    // ResourcePath = absolute path only — query parameters must NOT be signed.
+    // If query parameters were included, two requests to the same path with
+    // different query strings would produce different signatures even though the
+    // path is identical, causing 401 errors from LogicMonitor.
+
+    [Fact]
+    public async Task SendAsync_SignsAbsolutePathOnly_QueryStringExcluded()
+    {
+        HttpRequestMessage? captured = null;
+
+        var inner = new DelegateHandler(req =>
+        {
+            captured = req;
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
+        });
+
+        var handler = new LogicMonitorAuthHandler("id", "key") { InnerHandler = inner };
+        using var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://test.logicmonitor.com/santaba/rest/")
+        };
+
+        // Two requests to the same path, different query strings.
+        // Their signatures must be identical (query is not signed).
+        await client.GetAsync("device/devices?size=50&offset=0");
+        var parts1 = captured!.Headers.Authorization!.Parameter!.Split(':');
+        var epochMs1 = parts1[2];
+        var sig1 = parts1[1];
+
+        captured = null;
+
+        // Manually build the same path with different query so we can compare
+        // just the path portion of the signature string.  We can verify the
+        // property indirectly: build the expected signature ourselves using the
+        // *path* and confirm it matches what the handler produced.
+        var expectedSignature = LogicMonitorAuthHandler.ComputeSignature(
+            $"GET{epochMs1}/santaba/rest/device/devices", "key");
+
+        Assert.Equal(expectedSignature, sig1);
+    }
+
     // ── Authorization header ─────────────────────────────────────────────────
 
     [Fact]

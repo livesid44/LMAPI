@@ -35,8 +35,11 @@ public class LogicMonitorAuthHandler : DelegatingHandler
         if (request.Content is not null)
             body = await request.Content.ReadAsStringAsync(cancellationToken);
 
-        // Resource path is the absolute path + query string (without scheme/host)
-        var resourcePath = request.RequestUri?.PathAndQuery ?? string.Empty;
+        // Resource path is the absolute path only (NO query string).
+        // The LMv1 spec signs: Method + EpochMs + Body + Path — query parameters
+        // must be excluded or the HMAC will not match what LogicMonitor computes,
+        // causing a 401 Unauthorized.
+        var resourcePath = request.RequestUri?.AbsolutePath ?? string.Empty;
 
         var stringToSign = $"{method}{epochMs}{body}{resourcePath}";
         var signature = ComputeSignature(stringToSign, _accessKey);

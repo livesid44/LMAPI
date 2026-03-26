@@ -28,6 +28,11 @@ public class LogicMonitorService : ILogicMonitorService
         _logger.LogInformation("LM API v3 → GET {Url}", url);
 
         var response = await _httpClient.GetAsync(url, cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            throw new HttpRequestException(
+                "LogicMonitor returned 401 Unauthorized. " +
+                "Verify that LogicMonitor:AccessId and LogicMonitor:AccessKey are correct " +
+                "and that the API token has not been revoked or expired.");
         response.EnsureSuccessStatusCode();
 
         var lmResponse = await response.Content
@@ -49,6 +54,12 @@ public class LogicMonitorService : ILogicMonitorService
             _logger.LogWarning("Device {DeviceId} not found in LogicMonitor", deviceId);
             return null;
         }
+
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+            throw new HttpRequestException(
+                "LogicMonitor returned 401 Unauthorized. " +
+                "Verify that LogicMonitor:AccessId and LogicMonitor:AccessKey are correct " +
+                "and that the API token has not been revoked or expired.");
 
         response.EnsureSuccessStatusCode();
 
@@ -72,6 +83,11 @@ public class LogicMonitorService : ILogicMonitorService
         _logger.LogInformation("LM API v3 → GET {Url}", url);
 
         var response = await _httpClient.GetAsync(url, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+            throw new HttpRequestException(
+                "LogicMonitor returned 401 Unauthorized. " +
+                "Verify that LogicMonitor:AccessId and LogicMonitor:AccessKey are correct " +
+                "and that the API token has not been revoked or expired.");
         response.EnsureSuccessStatusCode();
 
         var lmResponse = await response.Content
@@ -101,6 +117,11 @@ public class LogicMonitorService : ILogicMonitorService
         _logger.LogInformation("LM API v3 → GET {Url}", url);
 
         var response = await _httpClient.GetAsync(url, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+            throw new HttpRequestException(
+                "LogicMonitor returned 401 Unauthorized. " +
+                "Verify that LogicMonitor:AccessId and LogicMonitor:AccessKey are correct " +
+                "and that the API token has not been revoked or expired.");
         response.EnsureSuccessStatusCode();
 
         var lmResponse = await response.Content
@@ -123,6 +144,11 @@ public class LogicMonitorService : ILogicMonitorService
         _logger.LogInformation("LM API v3 → GET {Url}", url);
 
         var response = await _httpClient.GetAsync(url, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+            throw new HttpRequestException(
+                "LogicMonitor returned 401 Unauthorized. " +
+                "Verify that LogicMonitor:AccessId and LogicMonitor:AccessKey are correct " +
+                "and that the API token has not been revoked or expired.");
         response.EnsureSuccessStatusCode();
 
         var lmResponse = await response.Content
