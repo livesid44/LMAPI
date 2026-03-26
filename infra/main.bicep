@@ -29,13 +29,9 @@ param location string = resourceGroup().location
 @secure()
 param lmCompany string
 
-@description('LogicMonitor API Access ID.')
+@description('LogicMonitor Bearer token for API v3 authentication.')
 @secure()
-param lmAccessId string
-
-@description('LogicMonitor API Access Key.')
-@secure()
-param lmAccessKey string
+param lmBearerToken string
 
 @description('Name of the Docker image in ACR (without tag). Defaults to "lmapi".')
 param containerImageName string = 'lmapi'
@@ -140,16 +136,10 @@ resource secretCompany 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   properties: { value: lmCompany }
 }
 
-resource secretAccessId 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+resource secretBearerToken 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: keyVault
-  name: 'lm-access-id'
-  properties: { value: lmAccessId }
-}
-
-resource secretAccessKey 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  parent: keyVault
-  name: 'lm-access-key'
-  properties: { value: lmAccessKey }
+  name: 'lm-bearer-token'
+  properties: { value: lmBearerToken }
 }
 
 resource secretAppInsightsConnStr 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
@@ -206,13 +196,8 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           identity: identity.id
         }
         {
-          name: 'lm-access-id'
-          keyVaultUrl: secretAccessId.properties.secretUri
-          identity: identity.id
-        }
-        {
-          name: 'lm-access-key'
-          keyVaultUrl: secretAccessKey.properties.secretUri
+          name: 'lm-bearer-token'
+          keyVaultUrl: secretBearerToken.properties.secretUri
           identity: identity.id
         }
         {
@@ -233,9 +218,8 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           }
           env: [
             // Map Container App secrets → ASP.NET Core configuration
-            { name: 'LogicMonitor__Company',   secretRef: 'lm-company'   }
-            { name: 'LogicMonitor__AccessId',  secretRef: 'lm-access-id' }
-            { name: 'LogicMonitor__AccessKey', secretRef: 'lm-access-key' }
+            { name: 'LogicMonitor__Company',     secretRef: 'lm-company'     }
+            { name: 'LogicMonitor__BearerToken', secretRef: 'lm-bearer-token' }
             { name: 'ApplicationInsights__ConnectionString', secretRef: 'appinsights-connection-string' }
             { name: 'ASPNETCORE_ENVIRONMENT', value: environmentName == 'prod' ? 'Production' : 'Development' }
           ]

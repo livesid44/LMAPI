@@ -1,35 +1,26 @@
 using System.Net.Http.Headers;
-using System.Security.Cryptography;
 using System.Text;
 
 namespace LMAPI.Infrastructure;
 
 /// <summary>
-/// DelegatingHandler that adds the LogicMonitor LMv1 HMAC-SHA256 authentication header
-/// to every outgoing request.
+/// DelegatingHandler that adds a <c>Authorization: Bearer {token}</c> header to every
+/// outgoing LogicMonitor REST API v3 request.
 /// <para>
-/// Signature formula (from LogicMonitor docs):
-/// <c>Base64( HMAC-SHA256( AccessKey, HTTPMethod + EpochMs + RequestBody + ResourcePath ) )</c>
-/// </para>
-/// <para>
-/// The handler logs an equivalent <c>curl</c> command at <c>Information</c> level before
-/// each request, which makes it easy to reproduce the request in Postman or a terminal
-/// and verify that the credentials and signature are correct.
+/// The handler also logs an equivalent <c>curl</c> command at <c>Information</c> level
+/// before each request, making it easy to reproduce the call in Postman or a terminal.
 /// </para>
 /// </summary>
 public class LogicMonitorAuthHandler : DelegatingHandler
 {
-    private readonly string _accessId;
-    private readonly string _accessKey;
+    private readonly string _bearerToken;
     private readonly ILogger<LogicMonitorAuthHandler> _logger;
 
     public LogicMonitorAuthHandler(
-        string accessId,
-        string accessKey,
+        string bearerToken,
         ILogger<LogicMonitorAuthHandler> logger)
     {
-        _accessId = accessId;
-        _accessKey = accessKey;
+        _bearerToken = bearerToken;
         _logger = logger;
     }
 
@@ -37,30 +28,16 @@ public class LogicMonitorAuthHandler : DelegatingHandler
         HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
-        var epochMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString();
-        var method = request.Method.Method.ToUpperInvariant();
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue("Bearer", _bearerToken);
 
-        // Read body (if any) — needed for POST/PUT signature
+        // Read body (if any) — needed for the curl log
         var body = string.Empty;
         if (request.Content is not null)
             body = await request.Content.ReadAsStringAsync(cancellationToken);
 
-        // Resource path is the absolute path only (NO query string).
-        // The LMv1 spec signs: Method + EpochMs + Body + Path — query parameters
-        // must be excluded or the HMAC will not match what LogicMonitor computes,
-        // causing a 401 Unauthorized.
-        var resourcePath = request.RequestUri?.AbsolutePath ?? string.Empty;
-
-        var stringToSign = $"{method}{epochMs}{body}{resourcePath}";
-        var signature = ComputeSignature(stringToSign, _accessKey);
-
-        request.Headers.Authorization =
-            new AuthenticationHeaderValue("LMv1", $"{_accessId}:{signature}:{epochMs}");
-
         // Log an equivalent curl command at Information level so it is always visible
         // in every environment (including Azure Container Apps) without any extra config.
-        // The Authorization header contains only the time-bound HMAC signature — the
-        // raw AccessKey is never written to logs.
         _logger.LogInformation(
             "Outgoing LogicMonitor request — equivalent curl:\n{Curl}",
             BuildCurlCommand(request, body));
@@ -90,15 +67,5 @@ public class LogicMonitorAuthHandler : DelegatingHandler
             sb.Append($" \\\n  -d '{body}'");
 
         return sb.ToString();
-    }
-
-    public static string ComputeSignature(string stringToSign, string accessKey)
-    {
-        var keyBytes = Encoding.UTF8.GetBytes(accessKey);
-        var messageBytes = Encoding.UTF8.GetBytes(stringToSign);
-
-        using var hmac = new HMACSHA256(keyBytes);
-        var hashBytes = hmac.ComputeHash(messageBytes);
-        return Convert.ToBase64String(hashBytes);
     }
 }

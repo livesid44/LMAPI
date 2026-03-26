@@ -27,7 +27,7 @@ graph TB
             APP["LMAPI Container App<br/>(.NET 8)<br/>─────────────────<br/>• /api/devices/{id}<br/>• /api/devices/{id}/events<br/>• /api/devices/{id}/alerts<br/>• /api/logs/events<br/>• /mcp  (MCP server)<br/>• /health"]
         end
 
-        KV["Azure Key Vault<br/>─────────────────<br/>• LM AccessId<br/>• LM AccessKey<br/>• LM Company"]
+        KV["Azure Key Vault<br/>─────────────────<br/>• LM BearerToken<br/>• LM Company"]
 
         AI["Application Insights<br/>+ Log Analytics Workspace<br/>─────────────────<br/>• Request traces<br/>• Dependency calls<br/>• Exceptions<br/>• Custom metrics"]
 
@@ -44,7 +44,7 @@ graph TB
     LA  -- "HTTPS (REST)"               --> APIM
     DEV -- "Swagger UI / REST"          --> APIM
     APIM -- "HTTPS (REST/MCP)"          --> APP
-    APP  -- "HTTPS + LMv1 HMAC-SHA256"  --> LMAPI_EXT
+    APP  -- "HTTPS + Bearer token"          --> LMAPI_EXT
     APP  -- "reads secrets"             --> KV
     APP  -- "telemetry"                 --> AI
     MI   -- "grants access"             --> KV
@@ -71,9 +71,7 @@ sequenceDiagram
     AP ->> LMA : GET /api/devices/42/alerts (forwarded)
 
     Note over LMA,KV: Secrets cached at startup via<br/>Azure Key Vault references
-    LMA ->> LMA : Build LMv1 signature<br/>HMAC-SHA256(AccessKey, GET+epoch+path)
-
-    LMA ->> LM  : GET /santaba/rest/alert/alerts?filter=monitorObjectId:42<br/>Authorization: LMv1 {id}:{sig}:{epoch}<br/>X-Version: 3
+    LMA ->> LM  : GET /santaba/rest/alert/alerts?filter=monitorObjectId:42<br/>Authorization: Bearer {lm-bearer-token}<br/>X-Version: 3
     LM  -->> LMA: 200 { status:200, data:{ total, items:[] } }
 
     LMA ->> AI  : Track dependency (LM API call latency)
@@ -118,7 +116,7 @@ sequenceDiagram
 |---|---|---|
 | **Azure Container Apps** | Consumption plan | Hosts LMAPI; auto-scales to zero; no infrastructure to manage |
 | **Azure API Management** | Developer / Standard | Rate-limit, OAuth2/API-key auth, developer portal, request tracing |
-| **Azure Key Vault** | Standard | Stores LM `AccessId`, `AccessKey`, `Company` as secrets; accessed via Managed Identity — no secrets in config files or environment variables |
+| **Azure Key Vault** | Standard | Stores LM `BearerToken`, `Company` as secrets; accessed via Managed Identity — no secrets in config files or environment variables |
 | **Application Insights** | Workspace-based | Distributed tracing, dependency tracking (LM API call latency), exceptions, custom metrics |
 | **Log Analytics Workspace** | Pay-per-GB | Backend store for App Insights telemetry |
 | **Azure Container Registry** | Basic | Stores the LMAPI Docker image; geo-replicated for HA |
@@ -140,7 +138,7 @@ sequenceDiagram
 │  LMAPI Container App                                            │
 │  • HTTPS only (managed cert)                                    │
 │  • Reads secrets from Key Vault via Managed Identity            │
-│  • LMv1 HMAC-SHA256 signs every outbound LM API call           │
+│  • Sends Bearer token on every outbound LM API call            │
 │  • No secrets in appsettings / environment variables            │
 └────────────────────────┬────────────────────────────────────────┘
                          │ Outbound to LogicMonitor SaaS
@@ -208,6 +206,5 @@ graph LR
 | Key Vault Secret | maps to appsettings key |
 |---|---|
 | `lm-company` | `LogicMonitor__Company` |
-| `lm-access-id` | `LogicMonitor__AccessId` |
-| `lm-access-key` | `LogicMonitor__AccessKey` |
+| `lm-bearer-token` | `LogicMonitor__BearerToken` |
 | `appinsights-connection-string` | `ApplicationInsights__ConnectionString` |

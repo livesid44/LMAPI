@@ -6,20 +6,18 @@ A .NET 8 Web API gateway that proxies the **LogicMonitor REST API v3**, with an 
 
 ## Configuration
 
-Three settings are **required** before the application will start. If any setting still holds its placeholder value the app exits immediately with an error message rather than producing a confusing DNS failure at request time.
+Two settings are **required** before the application will start. If any setting still holds its placeholder value the app exits immediately with an error message rather than producing a confusing DNS failure at request time.
 
 | Setting | Environment variable | Description |
 |---|---|---|
 | `LogicMonitor:Company` | `LogicMonitor__Company` | Your LM account subdomain, e.g. `acme` → `acme.logicmonitor.com` |
-| `LogicMonitor:AccessId` | `LogicMonitor__AccessId` | LM API token Access ID |
-| `LogicMonitor:AccessKey` | `LogicMonitor__AccessKey` | LM API token Access Key |
+| `LogicMonitor:BearerToken` | `LogicMonitor__BearerToken` | LM API Bearer token |
 
 ### Option A — Environment variables (recommended for production / containers)
 
 ```bash
 export LogicMonitor__Company=acme
-export LogicMonitor__AccessId=LMxxxxxxxxxxxxxxxx
-export LogicMonitor__AccessKey=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+export LogicMonitor__BearerToken=lmb_xxxxxxxxxxxxxxxxxxxxxxxx
 dotnet run --project src/LMAPI
 ```
 
@@ -27,9 +25,8 @@ dotnet run --project src/LMAPI
 
 ```bash
 cd src/LMAPI
-dotnet user-secrets set "LogicMonitor:Company"   "acme"
-dotnet user-secrets set "LogicMonitor:AccessId"  "LMxxxxxxxxxxxxxxxx"
-dotnet user-secrets set "LogicMonitor:AccessKey" "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+dotnet user-secrets set "LogicMonitor:Company"     "acme"
+dotnet user-secrets set "LogicMonitor:BearerToken" "lmb_xxxxxxxxxxxxxxxxxxxxxxxx"
 dotnet run
 ```
 
@@ -40,9 +37,8 @@ Edit `src/LMAPI/appsettings.Development.json`:
 ```json
 {
   "LogicMonitor": {
-    "Company":   "acme",
-    "AccessId":  "LMxxxxxxxxxxxxxxxx",
-    "AccessKey": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    "Company":     "acme",
+    "BearerToken": "lmb_xxxxxxxxxxxxxxxxxxxxxxxx"
   }
 }
 ```

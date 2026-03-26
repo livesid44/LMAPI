@@ -21,7 +21,7 @@ builder.Services.AddSwaggerGen(options =>
         Description =
             "A .NET 8 Web API that internally calls the LogicMonitor REST API v3 " +
             "to expose device details, device events, device alerts, and LM Logs by device ID. " +
-            "Authentication uses the LMv1 HMAC-SHA256 token scheme. " +
+            "Authentication uses Bearer token. " +
             "Also implements an MCP (Model Context Protocol) server at POST /mcp."
     });
 
@@ -35,9 +35,8 @@ builder.Services.AddSwaggerGen(options =>
 // In Azure, these values come from Container App secrets backed by Key Vault.
 // Locally, set them in appsettings.Development.json or user secrets.
 var lmSection = builder.Configuration.GetSection("LogicMonitor");
-var company   = lmSection["Company"]   ?? throw new InvalidOperationException("LogicMonitor:Company is not configured.");
-var accessId  = lmSection["AccessId"]  ?? throw new InvalidOperationException("LogicMonitor:AccessId is not configured.");
-var accessKey = lmSection["AccessKey"] ?? throw new InvalidOperationException("LogicMonitor:AccessKey is not configured.");
+var company     = lmSection["Company"]     ?? throw new InvalidOperationException("LogicMonitor:Company is not configured.");
+var bearerToken = lmSection["BearerToken"] ?? throw new InvalidOperationException("LogicMonitor:BearerToken is not configured.");
 
 // Detect un-replaced placeholder values so the app fails fast with a clear message
 // instead of making a live HTTP request to "your-company.logicmonitor.com" and getting
@@ -52,15 +51,14 @@ static void AssertNotPlaceholder(string value, string settingPath, string placeh
             $"or override it in appsettings.Development.json.");
 }
 
-AssertNotPlaceholder(company,   "LogicMonitor:Company",   "your-company");
-AssertNotPlaceholder(accessId,  "LogicMonitor:AccessId",  "your-access-id");
-AssertNotPlaceholder(accessKey, "LogicMonitor:AccessKey", "your-access-key");
+AssertNotPlaceholder(company,     "LogicMonitor:Company",     "your-company");
+AssertNotPlaceholder(bearerToken, "LogicMonitor:BearerToken", "your-bearer-token");
 
 var baseUrl = $"https://{company}.logicmonitor.com/santaba/rest/";
 
-// ── Register the LMv1 auth handler and typed HttpClient ───────────────────────
+// ── Register the Bearer token auth handler and typed HttpClient ───────────────
 builder.Services.AddTransient(sp => new LogicMonitorAuthHandler(
-    accessId, accessKey, sp.GetRequiredService<ILogger<LogicMonitorAuthHandler>>()));
+    bearerToken, sp.GetRequiredService<ILogger<LogicMonitorAuthHandler>>()));
 
 builder.Services
     .AddHttpClient<ILogicMonitorService, LogicMonitorService>(client =>

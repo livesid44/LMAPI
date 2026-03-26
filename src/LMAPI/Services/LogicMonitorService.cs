@@ -31,8 +31,8 @@ public class LogicMonitorService : ILogicMonitorService
         if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             throw new HttpRequestException(
                 "LogicMonitor returned 401 Unauthorized. " +
-                "Verify that LogicMonitor:AccessId and LogicMonitor:AccessKey are correct " +
-                "and that the API token has not been revoked or expired.");
+                "Verify that LogicMonitor:BearerToken is correct " +
+                "and that the token has not been revoked or expired.");
         response.EnsureSuccessStatusCode();
 
         var lmResponse = await response.Content
@@ -58,8 +58,8 @@ public class LogicMonitorService : ILogicMonitorService
         if (response.StatusCode == HttpStatusCode.Unauthorized)
             throw new HttpRequestException(
                 "LogicMonitor returned 401 Unauthorized. " +
-                "Verify that LogicMonitor:AccessId and LogicMonitor:AccessKey are correct " +
-                "and that the API token has not been revoked or expired.");
+                "Verify that LogicMonitor:BearerToken is correct " +
+                "and that the token has not been revoked or expired.");
 
         response.EnsureSuccessStatusCode();
 
@@ -86,8 +86,8 @@ public class LogicMonitorService : ILogicMonitorService
         if (response.StatusCode == HttpStatusCode.Unauthorized)
             throw new HttpRequestException(
                 "LogicMonitor returned 401 Unauthorized. " +
-                "Verify that LogicMonitor:AccessId and LogicMonitor:AccessKey are correct " +
-                "and that the API token has not been revoked or expired.");
+                "Verify that LogicMonitor:BearerToken is correct " +
+                "and that the token has not been revoked or expired.");
         response.EnsureSuccessStatusCode();
 
         var lmResponse = await response.Content
@@ -120,8 +120,8 @@ public class LogicMonitorService : ILogicMonitorService
         if (response.StatusCode == HttpStatusCode.Unauthorized)
             throw new HttpRequestException(
                 "LogicMonitor returned 401 Unauthorized. " +
-                "Verify that LogicMonitor:AccessId and LogicMonitor:AccessKey are correct " +
-                "and that the API token has not been revoked or expired.");
+                "Verify that LogicMonitor:BearerToken is correct " +
+                "and that the token has not been revoked or expired.");
         response.EnsureSuccessStatusCode();
 
         var lmResponse = await response.Content
@@ -147,8 +147,8 @@ public class LogicMonitorService : ILogicMonitorService
         if (response.StatusCode == HttpStatusCode.Unauthorized)
             throw new HttpRequestException(
                 "LogicMonitor returned 401 Unauthorized. " +
-                "Verify that LogicMonitor:AccessId and LogicMonitor:AccessKey are correct " +
-                "and that the API token has not been revoked or expired.");
+                "Verify that LogicMonitor:BearerToken is correct " +
+                "and that the token has not been revoked or expired.");
         response.EnsureSuccessStatusCode();
 
         var lmResponse = await response.Content
