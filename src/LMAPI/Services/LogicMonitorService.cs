@@ -1,5 +1,5 @@
 using System.Net;
-using System.Net.Http.Json;
+using System.Text.Json;
 using LMAPI.Models;
 
 namespace LMAPI.Services;
@@ -8,6 +8,9 @@ public class LogicMonitorService : ILogicMonitorService
 {
     private readonly HttpClient _httpClient;
     private readonly ILogger<LogicMonitorService> _logger;
+
+    private static readonly JsonSerializerOptions _jsonOptions =
+        new(JsonSerializerDefaults.Web);
 
     public LogicMonitorService(HttpClient httpClient, ILogger<LogicMonitorService> logger)
     {
@@ -28,27 +31,17 @@ public class LogicMonitorService : ILogicMonitorService
         _logger.LogInformation("LM API v3 → GET {Url}", url);
 
         var response = await _httpClient.GetAsync(url, cancellationToken);
-        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-            throw new HttpRequestException(
-                "LogicMonitor returned 401 Unauthorized. " +
-                "Verify that LogicMonitor:BearerToken is correct " +
-                "and that the token has not been revoked or expired.");
-        response.EnsureSuccessStatusCode();
-
-        var lmResponse = await response.Content
-            .ReadFromJsonAsync<LogicMonitorResponse<LogicMonitorListData<Device>>>(
-                cancellationToken: cancellationToken);
-
-        EnsureLmSuccess(lmResponse);
+        var lmResponse = await ReadLmBodyAsync<LogicMonitorListData<Device>>(response, url, cancellationToken);
         return lmResponse?.Data ?? new LogicMonitorListData<Device>();
     }
 
     /// <inheritdoc/>
     public async Task<Device?> GetDeviceAsync(int deviceId, CancellationToken cancellationToken = default)
     {
+        var url = $"device/devices/{deviceId}";
         _logger.LogInformation("LM API v3 → GET /device/devices/{DeviceId}", deviceId);
 
-        var response = await _httpClient.GetAsync($"device/devices/{deviceId}", cancellationToken);
+        var response = await _httpClient.GetAsync(url, cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
@@ -56,18 +49,7 @@ public class LogicMonitorService : ILogicMonitorService
             return null;
         }
 
-        if (response.StatusCode == HttpStatusCode.Unauthorized)
-            throw new HttpRequestException(
-                "LogicMonitor returned 401 Unauthorized. " +
-                "Verify that LogicMonitor:BearerToken is correct " +
-                "and that the token has not been revoked or expired.");
-
-        response.EnsureSuccessStatusCode();
-
-        var lmResponse = await response.Content
-            .ReadFromJsonAsync<LogicMonitorResponse<Device>>(cancellationToken: cancellationToken);
-
-        EnsureLmSuccess(lmResponse);
+        var lmResponse = await ReadLmBodyAsync<Device>(response, url, cancellationToken);
         return lmResponse?.Data;
     }
 
@@ -85,18 +67,7 @@ public class LogicMonitorService : ILogicMonitorService
         _logger.LogInformation("LM API v3 → GET {Url}", url);
 
         var response = await _httpClient.GetAsync(url, cancellationToken);
-        if (response.StatusCode == HttpStatusCode.Unauthorized)
-            throw new HttpRequestException(
-                "LogicMonitor returned 401 Unauthorized. " +
-                "Verify that LogicMonitor:BearerToken is correct " +
-                "and that the token has not been revoked or expired.");
-        response.EnsureSuccessStatusCode();
-
-        var lmResponse = await response.Content
-            .ReadFromJsonAsync<LogicMonitorResponse<LogicMonitorListData<DeviceEvent>>>(
-                cancellationToken: cancellationToken);
-
-        EnsureLmSuccess(lmResponse);
+        var lmResponse = await ReadLmBodyAsync<LogicMonitorListData<DeviceEvent>>(response, url, cancellationToken);
         return lmResponse?.Data ?? new LogicMonitorListData<DeviceEvent>();
     }
 
@@ -120,18 +91,7 @@ public class LogicMonitorService : ILogicMonitorService
         _logger.LogInformation("LM API v3 → GET {Url}", url);
 
         var response = await _httpClient.GetAsync(url, cancellationToken);
-        if (response.StatusCode == HttpStatusCode.Unauthorized)
-            throw new HttpRequestException(
-                "LogicMonitor returned 401 Unauthorized. " +
-                "Verify that LogicMonitor:BearerToken is correct " +
-                "and that the token has not been revoked or expired.");
-        response.EnsureSuccessStatusCode();
-
-        var lmResponse = await response.Content
-            .ReadFromJsonAsync<LogicMonitorResponse<LogicMonitorListData<DeviceAlert>>>(
-                cancellationToken: cancellationToken);
-
-        EnsureLmSuccess(lmResponse);
+        var lmResponse = await ReadLmBodyAsync<LogicMonitorListData<DeviceAlert>>(response, url, cancellationToken);
         return lmResponse?.Data ?? new LogicMonitorListData<DeviceAlert>();
     }
 
@@ -148,18 +108,7 @@ public class LogicMonitorService : ILogicMonitorService
         _logger.LogInformation("LM API v3 → GET {Url}", url);
 
         var response = await _httpClient.GetAsync(url, cancellationToken);
-        if (response.StatusCode == HttpStatusCode.Unauthorized)
-            throw new HttpRequestException(
-                "LogicMonitor returned 401 Unauthorized. " +
-                "Verify that LogicMonitor:BearerToken is correct " +
-                "and that the token has not been revoked or expired.");
-        response.EnsureSuccessStatusCode();
-
-        var lmResponse = await response.Content
-            .ReadFromJsonAsync<LogicMonitorResponse<LogicMonitorListData<LogEvent>>>(
-                cancellationToken: cancellationToken);
-
-        EnsureLmSuccess(lmResponse);
+        var lmResponse = await ReadLmBodyAsync<LogicMonitorListData<LogEvent>>(response, url, cancellationToken);
         return lmResponse?.Data ?? new LogicMonitorListData<LogEvent>();
     }
 
@@ -171,6 +120,54 @@ public class LogicMonitorService : ILogicMonitorService
         if (!string.IsNullOrWhiteSpace(filter))
             query += $"&filter={Uri.EscapeDataString(filter)}";
         return $"{path}?{query}";
+    }
+
+    /// <summary>
+    /// Reads and deserializes the body of an LM API <see cref="HttpResponseMessage"/>
+    /// after the per-method status-code pre-checks have been applied.
+    /// <list type="bullet">
+    ///   <item>Throws <see cref="HttpRequestException"/> on HTTP 401.</item>
+    ///   <item>Calls <see cref="HttpResponseMessage.EnsureSuccessStatusCode"/> for other non-2xx responses.</item>
+    ///   <item>Reads the raw body as a string and logs it at Debug level.</item>
+    ///   <item>Deserializes with <see cref="JsonSerializerDefaults.Web"/> options; translates
+    ///         <see cref="JsonException"/> into <see cref="HttpRequestException"/>.</item>
+    ///   <item>Calls <see cref="EnsureLmSuccess{T}"/> to detect LM application-level errors.</item>
+    ///   <item>Logs a Warning when the response envelope carries no data.</item>
+    /// </list>
+    /// </summary>
+    private async Task<LogicMonitorResponse<T>?> ReadLmBodyAsync<T>(
+        HttpResponseMessage response,
+        string urlForLogging,
+        CancellationToken cancellationToken)
+    {
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+            throw new HttpRequestException(
+                "LogicMonitor returned 401 Unauthorized. " +
+                "Verify that LogicMonitor:BearerToken is correct " +
+                "and that the token has not been revoked or expired.");
+
+        response.EnsureSuccessStatusCode();
+
+        var rawBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        _logger.LogDebug("LM API raw response for {Url}: {Body}", urlForLogging, rawBody);
+
+        LogicMonitorResponse<T>? lmResponse;
+        try
+        {
+            lmResponse = JsonSerializer.Deserialize<LogicMonitorResponse<T>>(rawBody, _jsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            throw new HttpRequestException(
+                $"LogicMonitor returned malformed JSON: {ex.Message}", ex);
+        }
+
+        EnsureLmSuccess(lmResponse);
+
+        if (lmResponse is not null && (object?)lmResponse.Data == null)
+            _logger.LogWarning("LM API returned HTTP 200 but no data for {Url}", urlForLogging);
+
+        return lmResponse;
     }
 
     /// <summary>

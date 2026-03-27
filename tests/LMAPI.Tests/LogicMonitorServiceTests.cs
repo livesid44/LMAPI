@@ -37,6 +37,28 @@ public class LogicMonitorServiceTests
         };
     }
 
+    private static HttpClient BuildHttpClientRaw(HttpStatusCode statusCode, string rawBody)
+    {
+        var handlerMock = new Mock<HttpMessageHandler>();
+
+        handlerMock
+            .Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage
+            {
+                StatusCode = statusCode,
+                Content = new StringContent(rawBody, System.Text.Encoding.UTF8, "application/json")
+            });
+
+        return new HttpClient(handlerMock.Object)
+        {
+            BaseAddress = new Uri("https://test.logicmonitor.com/santaba/rest/")
+        };
+    }
+
     private static LogicMonitorService BuildService(HttpClient client)
         => new(client, NullLogger<LogicMonitorService>.Instance);
 
@@ -314,5 +336,53 @@ public class LogicMonitorServiceTests
 
         Assert.Contains("1401", ex.Message);
         Assert.Contains("BearerToken", ex.Message);
+    }
+
+    // ── Malformed JSON handling ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDevicesAsync_Throws_WhenResponseBodyIsNotValidJson()
+    {
+        // The service must translate JsonException into HttpRequestException rather
+        // than silently returning an empty list.
+        using var client = BuildHttpClientRaw(HttpStatusCode.OK, "this is not json");
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(
+            () => BuildService(client).GetDevicesAsync());
+
+        Assert.Contains("malformed JSON", ex.Message);
+        Assert.IsType<System.Text.Json.JsonException>(ex.InnerException);
+    }
+
+    [Fact]
+    public async Task GetDeviceEventsAsync_Throws_WhenResponseBodyIsNotValidJson()
+    {
+        using var client = BuildHttpClientRaw(HttpStatusCode.OK, "not-json");
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(
+            () => BuildService(client).GetDeviceEventsAsync(42));
+
+        Assert.Contains("malformed JSON", ex.Message);
+        Assert.IsType<System.Text.Json.JsonException>(ex.InnerException);
+    }
+
+    [Fact]
+    public async Task GetDeviceAlertsAsync_Throws_WhenResponseBodyIsNotValidJson()
+    {
+        using var client = BuildHttpClientRaw(HttpStatusCode.OK, "not-json");
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(
+            () => BuildService(client).GetDeviceAlertsAsync(42));
+
+        Assert.Contains("malformed JSON", ex.Message);
+        Assert.IsType<System.Text.Json.JsonException>(ex.InnerException);
+    }
+
+    [Fact]
+    public async Task SearchLogEventsAsync_Throws_WhenResponseBodyIsNotValidJson()
+    {
+        using var client = BuildHttpClientRaw(HttpStatusCode.OK, "not-json");
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(
+            () => BuildService(client).SearchLogEventsAsync());
+
+        Assert.Contains("malformed JSON", ex.Message);
+        Assert.IsType<System.Text.Json.JsonException>(ex.InnerException);
     }
 }
