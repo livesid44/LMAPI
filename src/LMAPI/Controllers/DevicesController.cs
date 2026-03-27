@@ -24,6 +24,20 @@ public class DevicesController : ControllerBase
         _logger = logger;
     }
 
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Appends <c>X-LM-Status</c> and <c>X-LM-Message</c> response headers so
+    /// callers can see what LogicMonitor returned when the result set is empty.
+    /// </summary>
+    private void AddLmDiagnosticHeaders(int lmStatus, string lmMessage)
+    {
+        if (lmStatus != 0)
+            Response.Headers.Append("X-LM-Status", lmStatus.ToString());
+        if (!string.IsNullOrEmpty(lmMessage))
+            Response.Headers.Append("X-LM-Message", lmMessage);
+    }
+
     // ── GET /api/devices ──────────────────────────────────────────────────────
 
     /// <summary>
@@ -59,6 +73,8 @@ public class DevicesController : ControllerBase
         {
             var devices = await _logicMonitorService
                 .GetDevicesAsync(size, offset, filter, cancellationToken);
+            if (devices.Total == 0)
+                AddLmDiagnosticHeaders(devices.LmStatus, devices.LmMessage);
             return Ok(devices);
         }
         catch (HttpRequestException ex)
@@ -138,6 +154,8 @@ public class DevicesController : ControllerBase
         {
             var events = await _logicMonitorService
                 .GetDeviceEventsAsync(id, size, offset, filter, cancellationToken);
+            if (events.Total == 0)
+                AddLmDiagnosticHeaders(events.LmStatus, events.LmMessage);
             return Ok(events);
         }
         catch (HttpRequestException ex)
@@ -185,6 +203,8 @@ public class DevicesController : ControllerBase
         {
             var alerts = await _logicMonitorService
                 .GetDeviceAlertsAsync(id, size, offset, filter, cancellationToken);
+            if (alerts.Total == 0)
+                AddLmDiagnosticHeaders(alerts.LmStatus, alerts.LmMessage);
             return Ok(alerts);
         }
         catch (HttpRequestException ex)

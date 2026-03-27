@@ -32,7 +32,14 @@ public class LogicMonitorService : ILogicMonitorService
 
         var response = await _httpClient.GetAsync(url, cancellationToken);
         var lmResponse = await ReadLmBodyAsync<LogicMonitorListData<Device>>(response, url, cancellationToken);
-        return lmResponse?.Data ?? new LogicMonitorListData<Device>();
+        var result = lmResponse?.Data ?? new LogicMonitorListData<Device>();
+        result.LmStatus  = lmResponse?.Status ?? 0;
+        result.LmMessage = lmResponse?.ErrorMessage ?? string.Empty;
+        if (result.Total == 0)
+            _logger.LogInformation(
+                "LM API returned 0 devices for {Url} (LM status={LmStatus}, errmsg=\"{LmMsg}\")",
+                url, result.LmStatus, result.LmMessage);
+        return result;
     }
 
     /// <inheritdoc/>
@@ -68,7 +75,14 @@ public class LogicMonitorService : ILogicMonitorService
 
         var response = await _httpClient.GetAsync(url, cancellationToken);
         var lmResponse = await ReadLmBodyAsync<LogicMonitorListData<DeviceEvent>>(response, url, cancellationToken);
-        return lmResponse?.Data ?? new LogicMonitorListData<DeviceEvent>();
+        var result = lmResponse?.Data ?? new LogicMonitorListData<DeviceEvent>();
+        result.LmStatus  = lmResponse?.Status ?? 0;
+        result.LmMessage = lmResponse?.ErrorMessage ?? string.Empty;
+        if (result.Total == 0)
+            _logger.LogInformation(
+                "LM API returned 0 events for device {DeviceId} at {Url} (LM status={LmStatus}, errmsg=\"{LmMsg}\")",
+                deviceId, url, result.LmStatus, result.LmMessage);
+        return result;
     }
 
     // ── Alerts ────────────────────────────────────────────────────────────────
@@ -92,7 +106,14 @@ public class LogicMonitorService : ILogicMonitorService
 
         var response = await _httpClient.GetAsync(url, cancellationToken);
         var lmResponse = await ReadLmBodyAsync<LogicMonitorListData<DeviceAlert>>(response, url, cancellationToken);
-        return lmResponse?.Data ?? new LogicMonitorListData<DeviceAlert>();
+        var result = lmResponse?.Data ?? new LogicMonitorListData<DeviceAlert>();
+        result.LmStatus  = lmResponse?.Status ?? 0;
+        result.LmMessage = lmResponse?.ErrorMessage ?? string.Empty;
+        if (result.Total == 0)
+            _logger.LogInformation(
+                "LM API returned 0 alerts for device {DeviceId} at {Url} (LM status={LmStatus}, errmsg=\"{LmMsg}\")",
+                deviceId, url, result.LmStatus, result.LmMessage);
+        return result;
     }
 
     // ── LM Logs / Log Intelligence ────────────────────────────────────────────
@@ -109,7 +130,14 @@ public class LogicMonitorService : ILogicMonitorService
 
         var response = await _httpClient.GetAsync(url, cancellationToken);
         var lmResponse = await ReadLmBodyAsync<LogicMonitorListData<LogEvent>>(response, url, cancellationToken);
-        return lmResponse?.Data ?? new LogicMonitorListData<LogEvent>();
+        var result = lmResponse?.Data ?? new LogicMonitorListData<LogEvent>();
+        result.LmStatus  = lmResponse?.Status ?? 0;
+        result.LmMessage = lmResponse?.ErrorMessage ?? string.Empty;
+        if (result.Total == 0)
+            _logger.LogInformation(
+                "LM API returned 0 log events for {Url} (LM status={LmStatus}, errmsg=\"{LmMsg}\")",
+                url, result.LmStatus, result.LmMessage);
+        return result;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -164,8 +192,19 @@ public class LogicMonitorService : ILogicMonitorService
 
         EnsureLmSuccess(lmResponse);
 
-        if (lmResponse is not null && (object?)lmResponse.Data == null)
-            _logger.LogWarning("LM API returned HTTP 200 but no data for {Url}", urlForLogging);
+        if (lmResponse is null)
+        {
+            _logger.LogWarning(
+                "LM API response for {Url} deserialised to null — raw body: {Body}",
+                urlForLogging, rawBody);
+        }
+        else if ((object?)lmResponse.Data == null)
+        {
+            _logger.LogWarning(
+                "LM API returned HTTP 200 (LM status={LmStatus}, errmsg=\"{LmMsg}\") " +
+                "but the 'data' field was absent or null for {Url} — raw body: {Body}",
+                lmResponse.Status, lmResponse.ErrorMessage, urlForLogging, rawBody);
+        }
 
         return lmResponse;
     }

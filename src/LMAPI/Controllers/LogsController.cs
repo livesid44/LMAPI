@@ -24,6 +24,20 @@ public class LogsController : ControllerBase
         _logger = logger;
     }
 
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Appends <c>X-LM-Status</c> and <c>X-LM-Message</c> response headers so
+    /// callers can see what LogicMonitor returned when the result set is empty.
+    /// </summary>
+    private void AddLmDiagnosticHeaders(int lmStatus, string lmMessage)
+    {
+        if (lmStatus != 0)
+            Response.Headers.Append("X-LM-Status", lmStatus.ToString());
+        if (!string.IsNullOrEmpty(lmMessage))
+            Response.Headers.Append("X-LM-Message", lmMessage);
+    }
+
     // ── GET /api/logs/events ──────────────────────────────────────────────────
 
     /// <summary>
@@ -59,6 +73,8 @@ public class LogsController : ControllerBase
         {
             var logs = await _logicMonitorService
                 .SearchLogEventsAsync(filter, size, offset, cancellationToken);
+            if (logs.Total == 0)
+                AddLmDiagnosticHeaders(logs.LmStatus, logs.LmMessage);
             return Ok(logs);
         }
         catch (HttpRequestException ex)
