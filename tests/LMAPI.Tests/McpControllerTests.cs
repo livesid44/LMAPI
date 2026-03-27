@@ -64,7 +64,7 @@ public class McpControllerTests
     // ── tools/list ────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ToolsList_ReturnsFourTools()
+    public async Task ToolsList_ReturnsFiveTools()
     {
         var controller = BuildController();
         var req = MakeRequest("tools/list");

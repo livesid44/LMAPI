@@ -4,6 +4,7 @@ using System.Text.Json;
 using LMAPI.Infrastructure;
 using LMAPI.Models;
 using LMAPI.Services;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Moq.Protected;
@@ -61,6 +62,10 @@ public class LogicMonitorServiceTests
 
     private static LogicMonitorService BuildService(HttpClient client)
         => new(client, NullLogger<LogicMonitorService>.Instance);
+
+    private static LogicMonitorService BuildServiceWithLogger(
+        HttpClient client, ILogger<LogicMonitorService> logger)
+        => new(client, logger);
 
     // ── GetDevicesAsync ───────────────────────────────────────────────────────
 
@@ -280,6 +285,66 @@ public class LogicMonitorServiceTests
     {
         using var client = BuildHttpClient(HttpStatusCode.InternalServerError, null);
         await Assert.ThrowsAsync<HttpRequestException>(() => BuildService(client).SearchLogEventsAsync());
+    }
+
+    // ── Zero-results warning includes raw LM body ─────────────────────────────
+
+    [Fact]
+    public async Task GetDevicesAsync_LogsWarningWithRawBody_WhenLmReturnsZeroItems()
+    {
+        // Arrange: LM returns a valid envelope with total=0.
+        // The Warning-level log must include the raw body so operators can tell
+        // whether LM genuinely returned 0 items or whether parsing silently failed.
+        var emptyEnvelope = new { status = 200, errmsg = "OK", data = new { total = 0, items = Array.Empty<object>() } };
+        var rawJson = JsonSerializer.Serialize(emptyEnvelope);
+
+        var loggerMock = new Mock<ILogger<LogicMonitorService>>();
+        using var client = BuildHttpClientRaw(HttpStatusCode.OK, rawJson);
+        var svc = BuildServiceWithLogger(client, loggerMock.Object);
+
+        // Act
+        var result = await svc.GetDevicesAsync();
+
+        // Assert: result is empty
+        Assert.Equal(0, result.Total);
+        Assert.Empty(result.Items);
+
+        // Assert: a Warning log was emitted that contains the raw body
+        loggerMock.Verify(
+            x => x.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, _) =>
+                    v.ToString()!.Contains("0 devices") &&
+                    v.ToString()!.Contains("raw LM body")),
+                null,
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task GetDeviceEventsAsync_LogsWarningWithRawBody_WhenLmReturnsZeroItems()
+    {
+        var emptyEnvelope = new { status = 200, errmsg = "OK", data = new { total = 0, items = Array.Empty<object>() } };
+        var rawJson = JsonSerializer.Serialize(emptyEnvelope);
+
+        var loggerMock = new Mock<ILogger<LogicMonitorService>>();
+        using var client = BuildHttpClientRaw(HttpStatusCode.OK, rawJson);
+        var svc = BuildServiceWithLogger(client, loggerMock.Object);
+
+        var result = await svc.GetDeviceEventsAsync(42);
+
+        Assert.Equal(0, result.Total);
+        loggerMock.Verify(
+            x => x.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, _) =>
+                    v.ToString()!.Contains("0 events") &&
+                    v.ToString()!.Contains("raw LM body")),
+                null,
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
     }
 
     // ── LM body-level error code handling (errorCode 1401 etc.) ──────────────

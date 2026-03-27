@@ -31,14 +31,16 @@ public class LogicMonitorService : ILogicMonitorService
         _logger.LogInformation("LM API v3 → GET {Url}", url);
 
         var response = await _httpClient.GetAsync(url, cancellationToken);
-        var lmResponse = await ReadLmBodyAsync<LogicMonitorListData<Device>>(response, url, cancellationToken);
+        var (lmResponse, rawBody) = await ReadLmBodyAsync<LogicMonitorListData<Device>>(response, url, cancellationToken);
         var result = lmResponse?.Data ?? new LogicMonitorListData<Device>();
         result.LmStatus  = lmResponse?.Status ?? 0;
         result.LmMessage = lmResponse?.ErrorMessage ?? string.Empty;
         if (result.Total == 0)
-            _logger.LogInformation(
-                "LM API returned 0 devices for {Url} (LM status={LmStatus}, errmsg=\"{LmMsg}\")",
-                url, result.LmStatus, result.LmMessage);
+            _logger.LogWarning(
+                "LM API returned 0 devices for {Url} (LM status={LmStatus}, errmsg=\"{LmMsg}\") — " +
+                "raw LM body (first 1000 chars): {Body}",
+                url, result.LmStatus, result.LmMessage,
+                rawBody.Length > 1000 ? rawBody[..1000] + "…" : rawBody);
         return result;
     }
 
@@ -57,7 +59,7 @@ public class LogicMonitorService : ILogicMonitorService
         }
 
         var lmResponse = await ReadLmBodyAsync<Device>(response, url, cancellationToken);
-        return lmResponse?.Data;
+        return lmResponse.Response?.Data;
     }
 
     // ── Device Events ─────────────────────────────────────────────────────────
@@ -74,14 +76,16 @@ public class LogicMonitorService : ILogicMonitorService
         _logger.LogInformation("LM API v3 → GET {Url}", url);
 
         var response = await _httpClient.GetAsync(url, cancellationToken);
-        var lmResponse = await ReadLmBodyAsync<LogicMonitorListData<DeviceEvent>>(response, url, cancellationToken);
+        var (lmResponse, rawBody) = await ReadLmBodyAsync<LogicMonitorListData<DeviceEvent>>(response, url, cancellationToken);
         var result = lmResponse?.Data ?? new LogicMonitorListData<DeviceEvent>();
         result.LmStatus  = lmResponse?.Status ?? 0;
         result.LmMessage = lmResponse?.ErrorMessage ?? string.Empty;
         if (result.Total == 0)
-            _logger.LogInformation(
-                "LM API returned 0 events for device {DeviceId} at {Url} (LM status={LmStatus}, errmsg=\"{LmMsg}\")",
-                deviceId, url, result.LmStatus, result.LmMessage);
+            _logger.LogWarning(
+                "LM API returned 0 events for device {DeviceId} at {Url} (LM status={LmStatus}, errmsg=\"{LmMsg}\") — " +
+                "raw LM body (first 1000 chars): {Body}",
+                deviceId, url, result.LmStatus, result.LmMessage,
+                rawBody.Length > 1000 ? rawBody[..1000] + "…" : rawBody);
         return result;
     }
 
@@ -105,14 +109,16 @@ public class LogicMonitorService : ILogicMonitorService
         _logger.LogInformation("LM API v3 → GET {Url}", url);
 
         var response = await _httpClient.GetAsync(url, cancellationToken);
-        var lmResponse = await ReadLmBodyAsync<LogicMonitorListData<DeviceAlert>>(response, url, cancellationToken);
+        var (lmResponse, rawBody) = await ReadLmBodyAsync<LogicMonitorListData<DeviceAlert>>(response, url, cancellationToken);
         var result = lmResponse?.Data ?? new LogicMonitorListData<DeviceAlert>();
         result.LmStatus  = lmResponse?.Status ?? 0;
         result.LmMessage = lmResponse?.ErrorMessage ?? string.Empty;
         if (result.Total == 0)
-            _logger.LogInformation(
-                "LM API returned 0 alerts for device {DeviceId} at {Url} (LM status={LmStatus}, errmsg=\"{LmMsg}\")",
-                deviceId, url, result.LmStatus, result.LmMessage);
+            _logger.LogWarning(
+                "LM API returned 0 alerts for device {DeviceId} at {Url} (LM status={LmStatus}, errmsg=\"{LmMsg}\") — " +
+                "raw LM body (first 1000 chars): {Body}",
+                deviceId, url, result.LmStatus, result.LmMessage,
+                rawBody.Length > 1000 ? rawBody[..1000] + "…" : rawBody);
         return result;
     }
 
@@ -129,14 +135,16 @@ public class LogicMonitorService : ILogicMonitorService
         _logger.LogInformation("LM API v3 → GET {Url}", url);
 
         var response = await _httpClient.GetAsync(url, cancellationToken);
-        var lmResponse = await ReadLmBodyAsync<LogicMonitorListData<LogEvent>>(response, url, cancellationToken);
+        var (lmResponse, rawBody) = await ReadLmBodyAsync<LogicMonitorListData<LogEvent>>(response, url, cancellationToken);
         var result = lmResponse?.Data ?? new LogicMonitorListData<LogEvent>();
         result.LmStatus  = lmResponse?.Status ?? 0;
         result.LmMessage = lmResponse?.ErrorMessage ?? string.Empty;
         if (result.Total == 0)
-            _logger.LogInformation(
-                "LM API returned 0 log events for {Url} (LM status={LmStatus}, errmsg=\"{LmMsg}\")",
-                url, result.LmStatus, result.LmMessage);
+            _logger.LogWarning(
+                "LM API returned 0 log events for {Url} (LM status={LmStatus}, errmsg=\"{LmMsg}\") — " +
+                "raw LM body (first 1000 chars): {Body}",
+                url, result.LmStatus, result.LmMessage,
+                rawBody.Length > 1000 ? rawBody[..1000] + "…" : rawBody);
         return result;
     }
 
@@ -153,6 +161,8 @@ public class LogicMonitorService : ILogicMonitorService
     /// <summary>
     /// Reads and deserializes the body of an LM API <see cref="HttpResponseMessage"/>
     /// after the per-method status-code pre-checks have been applied.
+    /// Returns both the parsed envelope and the raw body string so callers can
+    /// include a body snapshot in diagnostic logs without reading the stream twice.
     /// <list type="bullet">
     ///   <item>Throws <see cref="HttpRequestException"/> on HTTP 401.</item>
     ///   <item>Calls <see cref="HttpResponseMessage.EnsureSuccessStatusCode"/> for other non-2xx responses.</item>
@@ -163,7 +173,7 @@ public class LogicMonitorService : ILogicMonitorService
     ///   <item>Logs a Warning when the response envelope carries no data.</item>
     /// </list>
     /// </summary>
-    private async Task<LogicMonitorResponse<T>?> ReadLmBodyAsync<T>(
+    private async Task<(LogicMonitorResponse<T>? Response, string RawBody)> ReadLmBodyAsync<T>(
         HttpResponseMessage response,
         string urlForLogging,
         CancellationToken cancellationToken)
@@ -206,7 +216,7 @@ public class LogicMonitorService : ILogicMonitorService
                 lmResponse.Status, lmResponse.ErrorMessage, urlForLogging, rawBody);
         }
 
-        return lmResponse;
+        return (lmResponse, rawBody);
     }
 
     /// <summary>
