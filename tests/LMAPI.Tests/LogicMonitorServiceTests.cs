@@ -1,0 +1,453 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using LMAPI.Infrastructure;
+using LMAPI.Models;
+using LMAPI.Services;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+using Moq.Protected;
+
+namespace LMAPI.Tests;
+
+public class LogicMonitorServiceTests
+{
+    // ── helpers ──────────────────────────────────────────────────────────────
+
+    private static HttpClient BuildHttpClient(HttpStatusCode statusCode, object? responseBody)
+    {
+        var json = responseBody is null ? "" : JsonSerializer.Serialize(responseBody);
+        var handlerMock = new Mock<HttpMessageHandler>();
+
+        handlerMock
+            .Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage
+            {
+                StatusCode = statusCode,
+                Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
+            });
+
+        return new HttpClient(handlerMock.Object)
+        {
+            BaseAddress = new Uri("https://test.logicmonitor.com/santaba/rest/")
+        };
+    }
+
+    private static HttpClient BuildHttpClientRaw(HttpStatusCode statusCode, string rawBody)
+    {
+        var handlerMock = new Mock<HttpMessageHandler>();
+
+        handlerMock
+            .Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage
+            {
+                StatusCode = statusCode,
+                Content = new StringContent(rawBody, System.Text.Encoding.UTF8, "application/json")
+            });
+
+        return new HttpClient(handlerMock.Object)
+        {
+            BaseAddress = new Uri("https://test.logicmonitor.com/santaba/rest/")
+        };
+    }
+
+    private static LogicMonitorService BuildService(HttpClient client)
+        => new(client, NullLogger<LogicMonitorService>.Instance);
+
+    private static LogicMonitorService BuildServiceWithLogger(
+        HttpClient client, ILogger<LogicMonitorService> logger)
+        => new(client, logger);
+
+    // ── GetDevicesAsync ───────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDevicesAsync_ReturnsDevices_WhenSuccessful()
+    {
+        var items = new[]
+        {
+            new Device { Id = 1, DisplayName = "Router-01",  Name = "10.0.0.1", AlertStatus = "normal" },
+            new Device { Id = 2, DisplayName = "Switch-01",  Name = "10.0.0.2", AlertStatus = "warn"   },
+            new Device { Id = 3, DisplayName = "Web-Server", Name = "10.0.0.3", AlertStatus = "critical" }
+        };
+        var envelope = new LogicMonitorResponse<LogicMonitorListData<Device>>
+        {
+            Status = 200, ErrorMessage = "OK",
+            Data = new LogicMonitorListData<Device> { Total = 3, Items = items }
+        };
+
+        using var client = BuildHttpClient(HttpStatusCode.OK, envelope);
+        var result = await BuildService(client).GetDevicesAsync();
+
+        Assert.Equal(3, result.Total);
+        Assert.Equal(3, result.Items.Count);
+        Assert.Equal("Router-01", result.Items[0].DisplayName);
+        Assert.Equal("Switch-01", result.Items[1].DisplayName);
+    }
+
+    [Fact]
+    public async Task GetDevicesAsync_ReturnsEmpty_WhenNoDevices()
+    {
+        var envelope = new LogicMonitorResponse<LogicMonitorListData<Device>>
+        {
+            Status = 200, ErrorMessage = "OK",
+            Data = new LogicMonitorListData<Device> { Total = 0, Items = [] }
+        };
+
+        using var client = BuildHttpClient(HttpStatusCode.OK, envelope);
+        var result = await BuildService(client).GetDevicesAsync();
+
+        Assert.Equal(0, result.Total);
+        Assert.Empty(result.Items);
+    }
+
+    [Fact]
+    public async Task GetDevicesAsync_Throws_WhenApiReturnsServerError()
+    {
+        using var client = BuildHttpClient(HttpStatusCode.InternalServerError, null);
+        await Assert.ThrowsAsync<HttpRequestException>(() => BuildService(client).GetDevicesAsync());
+    }
+
+    // ── GetDeviceAsync ────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDeviceAsync_ReturnsDevice_WhenFound()
+    {
+        var device = new Device { Id = 42, DisplayName = "Server-01", Name = "192.168.1.1", AlertStatus = "normal" };
+        var envelope = new LogicMonitorResponse<Device> { Status = 200, ErrorMessage = "OK", Data = device };
+
+        using var client = BuildHttpClient(HttpStatusCode.OK, envelope);
+        var result = await BuildService(client).GetDeviceAsync(42);
+
+        Assert.NotNull(result);
+        Assert.Equal(42, result.Id);
+        Assert.Equal("Server-01", result.DisplayName);
+    }
+
+    [Fact]
+    public async Task GetDeviceAsync_ReturnsNull_WhenNotFound()
+    {
+        using var client = BuildHttpClient(HttpStatusCode.NotFound, null);
+        var result = await BuildService(client).GetDeviceAsync(999);
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetDeviceAsync_Throws_WhenApiReturnsServerError()
+    {
+        using var client = BuildHttpClient(HttpStatusCode.InternalServerError, null);
+        await Assert.ThrowsAsync<HttpRequestException>(() => BuildService(client).GetDeviceAsync(1));
+    }
+
+    // ── GetDeviceEventsAsync ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDeviceEventsAsync_ReturnsEvents_WhenSuccessful()
+    {
+        var items = new[]
+        {
+            new DeviceEvent { Id = "e1", DeviceId = 42, LogMessage = "CPU spike", Severity = "warn" },
+            new DeviceEvent { Id = "e2", DeviceId = 42, LogMessage = "Disk full",  Severity = "error" }
+        };
+        var envelope = new LogicMonitorResponse<LogicMonitorListData<DeviceEvent>>
+        {
+            Status = 200, ErrorMessage = "OK",
+            Data = new LogicMonitorListData<DeviceEvent> { Total = 2, Items = items }
+        };
+
+        using var client = BuildHttpClient(HttpStatusCode.OK, envelope);
+        var result = await BuildService(client).GetDeviceEventsAsync(42);
+
+        Assert.Equal(2, result.Total);
+        Assert.Equal(2, result.Items.Count);
+        Assert.Equal("CPU spike", result.Items[0].LogMessage);
+    }
+
+    [Fact]
+    public async Task GetDeviceEventsAsync_ReturnsEmpty_WhenNoEvents()
+    {
+        var envelope = new LogicMonitorResponse<LogicMonitorListData<DeviceEvent>>
+        {
+            Status = 200, ErrorMessage = "OK",
+            Data = new LogicMonitorListData<DeviceEvent> { Total = 0, Items = [] }
+        };
+
+        using var client = BuildHttpClient(HttpStatusCode.OK, envelope);
+        var result = await BuildService(client).GetDeviceEventsAsync(42);
+
+        Assert.Equal(0, result.Total);
+        Assert.Empty(result.Items);
+    }
+
+    [Fact]
+    public async Task GetDeviceEventsAsync_Throws_WhenApiReturnsServerError()
+    {
+        using var client = BuildHttpClient(HttpStatusCode.InternalServerError, null);
+        await Assert.ThrowsAsync<HttpRequestException>(() => BuildService(client).GetDeviceEventsAsync(1));
+    }
+
+    // ── GetDeviceAlertsAsync ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDeviceAlertsAsync_ReturnsAlerts_WhenSuccessful()
+    {
+        var items = new[]
+        {
+            new DeviceAlert { Id = "DS100", MonitorObjectId = 42, Severity = 2, DataSource = "CPU" },
+            new DeviceAlert { Id = "DS101", MonitorObjectId = 42, Severity = 4, DataSource = "Disk" }
+        };
+        var envelope = new LogicMonitorResponse<LogicMonitorListData<DeviceAlert>>
+        {
+            Status = 200, ErrorMessage = "OK",
+            Data = new LogicMonitorListData<DeviceAlert> { Total = 2, Items = items }
+        };
+
+        using var client = BuildHttpClient(HttpStatusCode.OK, envelope);
+        var result = await BuildService(client).GetDeviceAlertsAsync(42);
+
+        Assert.Equal(2, result.Total);
+        Assert.Equal("DS100", result.Items[0].Id);
+        Assert.Equal(2, result.Items[0].Severity);
+    }
+
+    [Fact]
+    public async Task GetDeviceAlertsAsync_ReturnsEmpty_WhenNoAlerts()
+    {
+        var envelope = new LogicMonitorResponse<LogicMonitorListData<DeviceAlert>>
+        {
+            Status = 200, ErrorMessage = "OK",
+            Data = new LogicMonitorListData<DeviceAlert> { Total = 0, Items = [] }
+        };
+
+        using var client = BuildHttpClient(HttpStatusCode.OK, envelope);
+        var result = await BuildService(client).GetDeviceAlertsAsync(42);
+
+        Assert.Equal(0, result.Total);
+        Assert.Empty(result.Items);
+    }
+
+    [Fact]
+    public async Task GetDeviceAlertsAsync_Throws_WhenApiReturnsServerError()
+    {
+        using var client = BuildHttpClient(HttpStatusCode.InternalServerError, null);
+        await Assert.ThrowsAsync<HttpRequestException>(() => BuildService(client).GetDeviceAlertsAsync(1));
+    }
+
+    // ── SearchLogEventsAsync ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task SearchLogEventsAsync_ReturnsLogEvents_WhenSuccessful()
+    {
+        var items = new[]
+        {
+            new LogEvent { Id = "log-1", Message = "Connection established", Timestamp = "2024-06-01T00:00:00Z" },
+            new LogEvent { Id = "log-2", Message = "Timeout occurred",       Timestamp = "2024-06-01T00:01:00Z" }
+        };
+        var envelope = new LogicMonitorResponse<LogicMonitorListData<LogEvent>>
+        {
+            Status = 200, ErrorMessage = "OK",
+            Data = new LogicMonitorListData<LogEvent> { Total = 2, Items = items }
+        };
+
+        using var client = BuildHttpClient(HttpStatusCode.OK, envelope);
+        var result = await BuildService(client).SearchLogEventsAsync(filter: "_lm.resourceId.system.deviceId:\"42\"");
+
+        Assert.Equal(2, result.Total);
+        Assert.Equal("Connection established", result.Items[0].Message);
+    }
+
+    [Fact]
+    public async Task SearchLogEventsAsync_ReturnsEmpty_WhenNoLogs()
+    {
+        var envelope = new LogicMonitorResponse<LogicMonitorListData<LogEvent>>
+        {
+            Status = 200, ErrorMessage = "OK",
+            Data = new LogicMonitorListData<LogEvent> { Total = 0, Items = [] }
+        };
+
+        using var client = BuildHttpClient(HttpStatusCode.OK, envelope);
+        var result = await BuildService(client).SearchLogEventsAsync();
+
+        Assert.Equal(0, result.Total);
+        Assert.Empty(result.Items);
+    }
+
+    [Fact]
+    public async Task SearchLogEventsAsync_Throws_WhenApiReturnsServerError()
+    {
+        using var client = BuildHttpClient(HttpStatusCode.InternalServerError, null);
+        await Assert.ThrowsAsync<HttpRequestException>(() => BuildService(client).SearchLogEventsAsync());
+    }
+
+    // ── Zero-results warning includes raw LM body ─────────────────────────────
+
+    [Fact]
+    public async Task GetDevicesAsync_LogsWarningWithRawBody_WhenLmReturnsZeroItems()
+    {
+        // Arrange: LM returns a valid envelope with total=0.
+        // The Warning-level log must include the raw body so operators can tell
+        // whether LM genuinely returned 0 items or whether parsing silently failed.
+        var emptyEnvelope = new { status = 200, errmsg = "OK", data = new { total = 0, items = Array.Empty<object>() } };
+        var rawJson = JsonSerializer.Serialize(emptyEnvelope);
+
+        var loggerMock = new Mock<ILogger<LogicMonitorService>>();
+        using var client = BuildHttpClientRaw(HttpStatusCode.OK, rawJson);
+        var svc = BuildServiceWithLogger(client, loggerMock.Object);
+
+        // Act
+        var result = await svc.GetDevicesAsync();
+
+        // Assert: result is empty
+        Assert.Equal(0, result.Total);
+        Assert.Empty(result.Items);
+
+        // Assert: a Warning log was emitted that contains the raw body
+        loggerMock.Verify(
+            x => x.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, _) =>
+                    v.ToString()!.Contains("0 devices") &&
+                    v.ToString()!.Contains("raw LM body")),
+                null,
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task GetDeviceEventsAsync_LogsWarningWithRawBody_WhenLmReturnsZeroItems()
+    {
+        var emptyEnvelope = new { status = 200, errmsg = "OK", data = new { total = 0, items = Array.Empty<object>() } };
+        var rawJson = JsonSerializer.Serialize(emptyEnvelope);
+
+        var loggerMock = new Mock<ILogger<LogicMonitorService>>();
+        using var client = BuildHttpClientRaw(HttpStatusCode.OK, rawJson);
+        var svc = BuildServiceWithLogger(client, loggerMock.Object);
+
+        var result = await svc.GetDeviceEventsAsync(42);
+
+        Assert.Equal(0, result.Total);
+        loggerMock.Verify(
+            x => x.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, _) =>
+                    v.ToString()!.Contains("0 events") &&
+                    v.ToString()!.Contains("raw LM body")),
+                null,
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+
+    // ── LM body-level error code handling (errorCode 1401 etc.) ──────────────
+
+    [Fact]
+    public async Task GetDevicesAsync_Throws_WhenLmBodyContainsErrorCode1401()
+    {
+        // LM can return HTTP 200 with {"errorCode":1401,"errorMessage":"Authentication failed"}
+        // in the body — the service must detect and surface this as an HttpRequestException.
+        var errorBody = new { errorCode = 1401, errorMessage = "Authentication failed", errorDetail = (string?)null };
+
+        using var client = BuildHttpClient(HttpStatusCode.OK, errorBody);
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(
+            () => BuildService(client).GetDevicesAsync());
+
+        Assert.Contains("1401", ex.Message);
+        Assert.Contains("BearerToken", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetDevicesAsync_Throws_WhenLmBodyContainsStatusError()
+    {
+        // Older LM error shape: {"status":1401,"errmsg":"Authentication failed"}
+        var errorBody = new { status = 1401, errmsg = "Authentication failed" };
+
+        using var client = BuildHttpClient(HttpStatusCode.OK, errorBody);
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(
+            () => BuildService(client).GetDevicesAsync());
+
+        Assert.Contains("1401", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetDevicesAsync_Throws_WhenLmBodyContainsNon200Status()
+    {
+        // Any non-1401, non-200 LM status code should also throw.
+        var errorBody = new { status = 1404, errmsg = "Resource not found" };
+
+        using var client = BuildHttpClient(HttpStatusCode.OK, errorBody);
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(
+            () => BuildService(client).GetDevicesAsync());
+
+        Assert.Contains("1404", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetDeviceAlertsAsync_Throws_WhenLmBodyContainsErrorCode1401()
+    {
+        var errorBody = new { errorCode = 1401, errorMessage = "Authentication failed", errorDetail = (string?)null };
+
+        using var client = BuildHttpClient(HttpStatusCode.OK, errorBody);
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(
+            () => BuildService(client).GetDeviceAlertsAsync(42));
+
+        Assert.Contains("1401", ex.Message);
+        Assert.Contains("BearerToken", ex.Message);
+    }
+
+    // ── Malformed JSON handling ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDevicesAsync_Throws_WhenResponseBodyIsNotValidJson()
+    {
+        // The service must translate JsonException into HttpRequestException rather
+        // than silently returning an empty list.
+        using var client = BuildHttpClientRaw(HttpStatusCode.OK, "this is not json");
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(
+            () => BuildService(client).GetDevicesAsync());
+
+        Assert.Contains("malformed JSON", ex.Message);
+        Assert.IsType<System.Text.Json.JsonException>(ex.InnerException);
+    }
+
+    [Fact]
+    public async Task GetDeviceEventsAsync_Throws_WhenResponseBodyIsNotValidJson()
+    {
+        using var client = BuildHttpClientRaw(HttpStatusCode.OK, "not-json");
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(
+            () => BuildService(client).GetDeviceEventsAsync(42));
+
+        Assert.Contains("malformed JSON", ex.Message);
+        Assert.IsType<System.Text.Json.JsonException>(ex.InnerException);
+    }
+
+    [Fact]
+    public async Task GetDeviceAlertsAsync_Throws_WhenResponseBodyIsNotValidJson()
+    {
+        using var client = BuildHttpClientRaw(HttpStatusCode.OK, "not-json");
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(
+            () => BuildService(client).GetDeviceAlertsAsync(42));
+
+        Assert.Contains("malformed JSON", ex.Message);
+        Assert.IsType<System.Text.Json.JsonException>(ex.InnerException);
+    }
+
+    [Fact]
+    public async Task SearchLogEventsAsync_Throws_WhenResponseBodyIsNotValidJson()
+    {
+        using var client = BuildHttpClientRaw(HttpStatusCode.OK, "not-json");
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(
+            () => BuildService(client).SearchLogEventsAsync());
+
+        Assert.Contains("malformed JSON", ex.Message);
+        Assert.IsType<System.Text.Json.JsonException>(ex.InnerException);
+    }
+}
